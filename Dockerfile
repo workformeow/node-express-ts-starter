@@ -3,7 +3,7 @@
 # Pin the exact version so builds are reproducible; bump it deliberately.
 
 # ── Build stage: full deps + compile ──────────────────────────────────────────
-FROM node:24.20.0-slim AS build
+FROM node:26.13.1-slim AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # ── Runtime stage: compiled output + production deps only ────────────────────
-FROM node:24.20.0-slim
+FROM node:26.13.1-slim
 WORKDIR /app
 
 # Default to production so a plain `docker run` / `docker compose up` behaves like
