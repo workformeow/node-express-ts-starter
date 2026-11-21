@@ -4,6 +4,12 @@ Guidance for AI assistants (and humans) working in this repository. Read this **
 
 If anything here conflicts with the actual code, the code wins — update this file in the same change.
 
+> **⚠️ Active refactor — teaching mode (highest priority).** A refactor is in progress, tracked in
+> `ROADMAP.md`. Its goal is for the developer to **learn**, not to get changes made fast. **Do not
+> edit code unless explicitly told to** ("แก้เลย", "write it", …). By default: explain the why,
+> propose an approach with short examples, let the developer write it, then review. Work one
+> phase / one item at a time. Remove this note when the roadmap is finished.
+
 ---
 
 ## 1. What this project is
