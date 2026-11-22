@@ -9,7 +9,6 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import { defineConfig } from 'eslint/config'
 
-// Shared import/order rule — reused by both the src and scripts rule sets.
 /** @type {['error', Record<string, unknown>]} */
 const importOrderRule = [
   'error',
@@ -244,42 +243,6 @@ export default defineConfig(
     files: httpAdapterFiles,
     rules: {
       'no-restricted-imports': ['error', { patterns: httpAdapterRestrictedPatterns }],
-    },
-  },
-
-  // ── Node.js scripts (setup, tooling) ────────────────────────────────────────
-  {
-    files: ['scripts/**/*.ts'],
-    extends: [
-      eslint.configs.recommended,
-      tseslint.configs.recommended,
-      tseslint.configs.recommendedTypeChecked,
-      prettier,
-    ],
-    languageOptions: {
-      globals: globals.node,
-      parserOptions: {
-        project: './scripts/tsconfig.json',
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    plugins: {
-      import: importPlugin,
-      'unused-imports': unusedImports,
-      n,
-    },
-    rules: {
-      'no-console': 'off', // CLI scripts report progress via console
-      'no-process-env': 'off',
-      'n/no-process-exit': 'off', // CLI scripts legitimately exit with a status code
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/consistent-type-imports': [
-        'error',
-        { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
-      ],
-      'import/consistent-type-specifier-style': ['error', 'prefer-top-level'],
-      'unused-imports/no-unused-imports': 'error',
-      'import/order': importOrderRule,
     },
   },
 

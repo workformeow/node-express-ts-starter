@@ -1,11 +1,7 @@
 export enum AppEnv {
   PRODUCTION = 'production',
   DEVELOPMENT = 'development',
-}
-
-export enum EnvFileName {
-  DEVELOPMENT = '.env.dev',
-  PRODUCTION = '.env.prod',
+  TEST = 'test',
 }
 
 export type AppResponse<T> = {

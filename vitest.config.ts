@@ -10,15 +10,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     env: {
-      NODE_ENV: 'development',
-      PORT: '3000',
-      BASE_URL: 'http://localhost:3000',
-      CORS_ORIGINS: '',
-      LOG_LEVEL_CONSOLE: 'error',
-      LOG_LEVEL_FILE: 'error',
-      LOG_LEVEL_ERROR_FILE: 'error',
+      NODE_ENV: 'test',
       LOG_SILENT: 'true',
-      SHUTDOWN_TIMEOUT_MS: '10000',
     },
   },
 })

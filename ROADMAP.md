@@ -66,12 +66,12 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 ## Decisions
 
-| เรื่อง                   | ตัดสินใจ                                                         |
-| ------------------------ | ---------------------------------------------------------------- |
+| เรื่อง                    | ตัดสินใจ                                                        |
+| ----------------------- | ------------------------------------------------------------- |
 | `.env` ไม่เจอ            | log อย่างเดียว ไม่ exit (platform inject env เอง)                |
-| schema ไม่ผ่าน           | `process.exit(1)`                                                |
-| dotenv                   | ไม่ใช้ — ใช้ `process.loadEnvFile()` ของ Node 22                 |
-| http-errors              | ไม่ใช้ — domain errors เดิมแยก business ออกจาก HTTP status อยู่แล้ว |
-| Logger                   | winston ต่อ แต่ใช้ format สำเร็จรูป                              |
-| `app.ts` / `main.ts`     | แยกไว้ — test และ Vercel ต้อง import app โดยไม่ `listen`          |
-| try/catch ใน controller  | ลบ — Express 5 จัดการให้                                         |
+| schema ไม่ผ่าน            | `process.exit(1)`                                             |
+| dotenv                  | ไม่ใช้ — ใช้ `process.loadEnvFile()` ของ Node 22                 |
+| http-errors             | ไม่ใช้ — domain errors เดิมแยก business ออกจาก HTTP status อยู่แล้ว |
+| Logger                  | winston ต่อ แต่ใช้ format สำเร็จรูป                                |
+| `app.ts` / `main.ts`    | แยกไว้ — test และ Vercel ต้อง import app โดยไม่ `listen`         |
+| try/catch ใน controller | ลบ — Express 5 จัดการให้                                        |
