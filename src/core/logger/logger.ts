@@ -7,6 +7,7 @@ import { AppEnv } from '@/shared/types'
 
 const { combine, timestamp, colorize, printf, json, errors } = format
 
+// e.g. 'boom' → boom, { id: 'a' } → { id: 'a' } (colored), undefined → 'undefined'
 const toText = (value: unknown): string =>
   typeof value === 'string' ? value : inspect(value, { colors: true, depth: 5 })
 
@@ -15,16 +16,18 @@ const devFormat = combine(
   colorize(),
   timestamp({ format: 'HH:mm:ss' }),
   printf(({ level, message, timestamp, stack, ...meta }) => {
-    // e.g. Input entries = [['id', 'abc']] > fields  = { id: 'abc' }
+    // e.g. meta = { id: 'abc', [Symbol(level)]: … } → fields = { id: 'abc' }
     const fields = Object.fromEntries(Object.entries(meta))
 
-    // has meta → extra = "\n{ id: 'abc' }", no meta  → extra = ""
-    const extra =
-      Object.keys(fields).length > 0 ? `\n${inspect(fields, { colors: true, depth: 5 })}` : ''
+    // has meta → extra = "\n{ id: 'abc' }", no meta → extra = ""
+    const extra = Object.keys(fields).length > 0 ? `\n${toText(fields)}` : ''
+
+    const text = toText(message)
+    const trace = stack ? `\n${toText(stack)}` : ''
 
     // 10:30:00 error: Todo not found
     // { id: 'abc' }
-    return `${timestamp as string} ${level}: ${toText(message)}${extra}${toText(stack)}`
+    return `${timestamp as string} ${level}: ${text}${extra}${trace}`
   })
 )
 

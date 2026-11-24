@@ -32,7 +32,7 @@ export const onShutdown = (fn: CleanupFn) => {
   cleanups.push(fn)
 }
 
-export const shutdown = async (exitCode = 0) => {
+const shutdown = async (exitCode = 0) => {
   if (isShuttingDown) return
   isShuttingDown = true
 
