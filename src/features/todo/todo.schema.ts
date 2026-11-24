@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ERRORS } from '@/shared/constants'
+import { ERRORS } from '@/shared/consts'
 
 const TITLE_MAX_LENGTH = 200
 

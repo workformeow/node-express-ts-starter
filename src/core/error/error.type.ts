@@ -1,5 +1,4 @@
-import type { Source, StackFrame } from '@/core/logger'
-import type { ErrorSeverity, HttpStatus } from '@/shared/constants'
+import type { ErrorSeverity, HttpStatus } from '@/shared/consts'
 
 export type EndpointContext = {
   method: string
@@ -18,13 +17,12 @@ export type ErrorContext = {
 // JSON-serializable error shape shared by structured logging and dev responses.
 export type StructuredError = {
   message: string
-  source?: Source
   status: HttpStatus
   severity: ErrorSeverity
   context: ErrorContext
   error: {
     name: string
     message: string
-    stack: StackFrame[]
+    stack?: string | undefined
   }
 }

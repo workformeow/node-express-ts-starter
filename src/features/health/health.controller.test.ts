@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
 import { createApp } from '@/app'
-import { HttpStatus } from '@/shared/constants'
+import { HttpStatus } from '@/shared/consts'
 import type { AppResponse } from '@/shared/types'
 
 const app = createApp()

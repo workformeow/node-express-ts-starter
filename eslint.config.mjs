@@ -3,7 +3,6 @@ import eslint from '@eslint/js'
 import prettier from 'eslint-config-prettier'
 import importPlugin from 'eslint-plugin-import-x'
 import n from 'eslint-plugin-n'
-import security from 'eslint-plugin-security'
 import unusedImports from 'eslint-plugin-unused-imports'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
@@ -79,8 +78,8 @@ const businessLayerRestrictedPatterns = [
       'Business logic must not depend on the DB. Depend on the repository port (<feature>.repository.ts) and implement it in <feature>.repository.<driver>.ts.',
   },
   {
-    group: ['@/core/middleware', '@/core/middleware/*'],
-    message: 'Middleware is HTTP plumbing. Wire it in *.routes.ts, not in business logic.',
+    group: ['@/core/http', '@/core/http/*'],
+    message: 'HTTP plumbing. Wire it in *.routes.ts, not in business logic.',
   },
   {
     group: ['@/shared/constants/http-status*'],
@@ -137,9 +136,6 @@ export default defineConfig(
     plugins: {
       import: importPlugin,
       'unused-imports': unusedImports,
-      // @types/eslint-plugin-security is stale against ESLint 10's Plugin type
-      // (eslint-plugin-security itself ships no types) — cast around the mismatch.
-      security: /** @type {import('eslint').ESLint.Plugin} */ (security),
       n,
     },
     rules: {
@@ -167,9 +163,6 @@ export default defineConfig(
       'n/no-deprecated-api': 'error', // catch use of deprecated Node.js APIs
       'n/no-extraneous-import': 'error', // imports must be declared in package.json
       'n/no-unsupported-features/node-builtins': ['error', { version: '>=26' }], // match engines.node
-
-      // ── Security ─────────────────────────────────────────────────────────────
-      'security/detect-object-injection': 'warn',
 
       // ── TypeScript strictness ───────────────────────────────────────────────
       '@typescript-eslint/no-explicit-any': 'error',

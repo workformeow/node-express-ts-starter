@@ -1,4 +1,4 @@
-import { ERRORS, HttpStatus } from '@/shared/constants'
+import { ERRORS, HttpStatus } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 import { env } from './env'
 import type { CorsOptions } from 'cors'

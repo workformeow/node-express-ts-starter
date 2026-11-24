@@ -17,7 +17,7 @@ A production-ready template for building REST APIs with Node.js, Express, and Ty
 
 ## Requirements
 
-- Node.js >= 22
+- Node.js >= 26 (see `.nvmrc`)
 - npm >= 10
 - Docker (optional)
 
@@ -29,10 +29,10 @@ A production-ready template for building REST APIs with Node.js, Express, and Ty
 npm install
 ```
 
-2. Create the environment files
+2. Create the environment file (optional — every variable has a default)
 
 ```bash
-npm run setup-env
+cp .env.example .env
 ```
 
 3. Start the development server
@@ -45,41 +45,32 @@ The server starts at http://localhost:3000
 
 ## Environment Variables
 
-Environment files are loaded based on `NODE_ENV`:
+At startup the app loads `.env` from the project root with `process.loadEnvFile()`. If there is no `.env` (e.g. on a host that injects variables itself), it logs that and uses `process.env` as is. Variables already set in the environment are never overridden by the file.
 
-- `NODE_ENV=development` -> `.env.dev`
-- `NODE_ENV=production` -> `.env.prod`
+Values are validated with Zod (see `src/core/config/env.ts`). Every non-secret variable has a default; the process exits with a readable error if a value is invalid.
 
-Values are validated at startup with Zod (see `src/core/config/env/env.schema.ts`); the process exits if any variable is missing or invalid.
-
-Example values from `.env.example`:
-
-```env
-PORT="3000"
-NODE_ENV="development"
-BASE_URL="http://localhost:3000"
-CORS_ORIGINS="http://localhost:3000,http://localhost:4000,http://localhost:4200"
-LOG_LEVEL_CONSOLE="debug"
-LOG_LEVEL_FILE="info"
-LOG_LEVEL_ERROR_FILE="error"
-LOG_SILENT="false"
-SHUTDOWN_TIMEOUT_MS="10000"
-```
-
-`LOG_SILENT="true"` turns off every log transport (console and files, so no `logs/` folder is created). It defaults to `false`; `vitest.config.ts` sets it to `true` so test runs stay quiet.
+| Variable              | Default                 | Notes                                                                  |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| `PORT`                | `3000`                  |                                                                        |
+| `NODE_ENV`            | `development`           | `development`, `production`, or `test` (`test` silences all logging)   |
+| `BASE_URL`            | `http://localhost:3000` | Shown in the startup log                                               |
+| `CORS_ORIGINS`        | (empty)                 | Production only — development allows all origins. Comma-separated      |
+| `LOG_LEVEL`           | `info`                  | `error`, `warn`, `info`, `http`, `verbose`, `debug`                    |
+| `LOG_FILE`            | `false`                 | `true` also writes JSON log files to `logs/` (see [Logging](#logging)) |
+| `SHUTDOWN_TIMEOUT_MS` | `10000`                 | Max time for graceful shutdown before forcing exit                     |
 
 ## Available Scripts
 
-- `npm run dev`: run with `tsx --watch` using `.env.dev`
+- `npm run dev`: run with `tsx --watch`
 - `npm run build`: clean `dist`, compile TypeScript, then rewrite path aliases (`tsc-alias`)
-- `npm start`: run the compiled build using `.env.prod`
+- `npm start`: run the compiled build
 - `npm run fix`: auto-fix ESLint issues and format with Prettier
 - `npm run lint`: check with ESLint without changing files
 - `npm run typecheck`: type-check with `tsc --noEmit`
 - `npm run clean`: remove the `dist` directory
-- `npm run setup-env`: generate `.env.dev` and `.env.prod` from `.env.example`
 - `npm test`: run the test suite once (Vitest)
 - `npm run test:watch`: run the test suite in watch mode
+- `npm run check`: lint + typecheck + test + build in one go
 
 ## API Endpoints
 
@@ -119,7 +110,7 @@ Folders are split by feature (`src/features/<name>/`). Inside a feature, code is
 - **Business layer**: `*.entity.ts`, `*.repository.ts` (interface), `*.service.ts`. Plain TypeScript. Services throw domain errors (`NotFoundError`, `ConflictError`, …) and `core/error` maps them to HTTP status codes.
 - **Adapters**: `*.controller.ts` / `*.routes.ts` / `*.schema.ts` for HTTP, `*.repository.<driver>.ts` for storage.
 - **Composition root**: the feature's `index.ts` is the only place that chooses an adapter. Switching from in-memory to a real database means adding one adapter file and changing one line there.
-- **Enforced by ESLint**: business-layer files can't import `express`, DB clients, `@/core/middleware`, or `HttpStatus` (see `eslint.config.mjs`).
+- **Enforced by ESLint**: business-layer files can't import `express`, DB clients, `@/core/http`, or `HttpStatus` (see `eslint.config.mjs`).
 
 Because services only depend on an interface, their tests inject an in-memory repository instead of mocking modules.
 
@@ -142,15 +133,18 @@ http://localhost:3000/docs
 
 ## Logging
 
-- Console and file logging via Winston
-- Daily-rotated files organized by year/month
-- Log location: `logs/YYYY/MM`
-- Separate general (`.log`) and error (`.error.log`) files
-- Set `LOG_SILENT="true"` to turn off all logging (used by tests)
+Winston, with built-in formats only:
+
+- **Console** — colored, human-readable lines in development; JSON in production (for the platform's log collector).
+- **Files** (only when `LOG_FILE="true"`) — JSON, rotated daily in `logs/`:
+  - `YYYY-MM-DD.log` — everything at or above `LOG_LEVEL`, kept 14 days
+  - `YYYY-MM-DD.error.log` — errors only, kept 30 days
+- **HTTP access log** — `morgan` lines go through the same logger at `http` level; set `LOG_LEVEL="http"` to see them.
+- `NODE_ENV=test` silences all logging, so test runs stay quiet and create no `logs/` folder.
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`: `npm ci` -> `npm run lint` -> `npm run typecheck` -> `npm run setup-env` -> `npm test`. Run the same commands locally before opening a PR.
+`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`: `npm ci` -> `npm run lint` -> `npm run typecheck` -> `npm test`. Run `npm run check` locally before opening a PR.
 
 ## Testing
 
@@ -183,7 +177,7 @@ The image is a two-stage build on `node:<version>-slim` (Debian/glibc, so native
 - **Build stage** installs all dependencies and compiles TypeScript, so the running container never needs extra memory for `tsc` (useful on small/free plans).
 - **Runtime stage** contains only `dist/` and production dependencies, runs as the non-root `node` user, and starts with `node dist/main.js` directly (not `npm start`), so `SIGTERM` from `docker stop` or a redeploy reaches the app and graceful shutdown runs.
 
-`NODE_ENV=production` is the default. Run `npm run setup-env` first so `.env.prod` exists — `docker-compose.yml` loads it via `env_file`. It is never copied into the image; on a host like Render, set the variables in the dashboard instead (and point its health check at `/health`).
+`NODE_ENV=production` is the default. Create `.env.prod` first (copy `.env.example`) — `docker-compose.yml` loads it via `env_file`. It is never copied into the image; on a host like Render, set the variables in the dashboard instead (and point its health check at `/health`).
 
 The service has a `healthcheck` that calls `GET /health` every 30s, so `docker ps` shows `(healthy)` / `(unhealthy)` and other services can wait on it with `depends_on: { nodejs: { condition: service_healthy } }`. Plain Compose only reports the status; it does **not** restart an unhealthy container (Swarm, Kubernetes, or a helper like autoheal does). If you change `PORT` in `.env.prod`, update the URL in the healthcheck too.
 
@@ -192,23 +186,19 @@ The service has a `healthcheck` that calls `GET /health` every 30s, so `docker p
 ```text
 .
 |- .github/workflows/ci.yml  # CI on PRs + pushes to main: lint, typecheck, test
-|- scripts/
-|  |- setup-env.ts
-|  \- tsconfig.json
 |- src/
 |  |- core/                   # App infrastructure (not feature-specific)
-|  |  |- config/              # Env loading + Zod validation + runtime options (cors/helmet/rate-limit)
-|  |  |  \- env/              # EnvConfig type, Zod schema, loader, barrel
+|  |  |- config/              # env.ts (load .env + Zod validation) + runtime options (cors/helmet/rate-limit)
 |  |  |- error/               # AppError, domain errors, error logger, error middleware, wrapUnexpected
+|  |  |- http/                # Express middleware (validate, requestLogger)
 |  |  |- logger/              # Winston logger setup
-|  |  |- middleware/          # Custom middleware (validate: Zod for params/query/body)
 |  |  \- server/              # Server bootstrap + graceful shutdown (onShutdown hooks)
 |  |- features/               # Feature modules (one folder per feature)
 |  |  |- docs/                # OpenAPI spec + Scalar API reference UI
 |  |  |- health/              # Health check (liveness probe)
 |  |  \- todo/                # Reference feature: entity, repository port + memory adapter, service, schema, controller, routes
 |  |- shared/                 # Cross-cutting building blocks
-|  |  |- constants/           # HttpStatus, log levels, messages (SUCCESS/ERRORS/LOG)
+|  |  |- consts/              # HttpStatus, log levels, messages (SUCCESS/ERRORS/LOG)
 |  |  |- types/               # Shared types
 |  |  \- utils/               # Helpers (createResponse)
 |  |- app.ts                  # createApp(): global middleware + routes + error handler

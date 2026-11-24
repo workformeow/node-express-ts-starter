@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { validate } from '@/core/middleware'
+import { validate } from '@/core/http'
 import { todoSchema } from './todo.schema'
 import type { TodoController } from './todo.controller'
 

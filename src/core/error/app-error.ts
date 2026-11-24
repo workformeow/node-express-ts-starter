@@ -1,4 +1,4 @@
-import { ErrorSeverity, HttpStatus } from '@/shared/constants'
+import { ErrorSeverity, HttpStatus } from '@/shared/consts'
 import type { EndpointContext, ErrorContext } from './error.type'
 import type { Request } from 'express'
 

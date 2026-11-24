@@ -1,6 +1,6 @@
 import { AppError } from '@/core/error'
-import { ErrorSeverity, HttpStatus } from '@/shared/constants'
-import type { ValidatedShape } from './validate.type'
+import type { ValidatedShape } from '@/core/http/validate.type'
+import { ErrorSeverity, HttpStatus } from '@/shared/consts'
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
 
 type RequestSource = 'params' | 'query' | 'body'
@@ -39,7 +39,6 @@ export const validate =
   (schema: ValidatedShape): RequestHandler =>
   (req: Request, _res: Response, next: NextFunction): void => {
     for (const source of SOURCES) {
-      // eslint-disable-next-line security/detect-object-injection
       const segmentSchema = schema[source]
       if (!segmentSchema) {
         continue

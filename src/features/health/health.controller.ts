@@ -1,4 +1,4 @@
-import { HttpStatus, SUCCESS } from '@/shared/constants'
+import { HttpStatus, SUCCESS } from '@/shared/consts'
 import { createResponse } from '@/shared/utils'
 import type { NextFunction, Request, Response } from 'express'
 

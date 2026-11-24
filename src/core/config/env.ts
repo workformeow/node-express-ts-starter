@@ -2,8 +2,7 @@
 /* eslint-disable no-console */
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
-import type { LogLevel } from '@/shared/constants'
-import { LOG, LOG_LEVELS } from '@/shared/constants'
+import { LOG, LOG_LEVELS } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 
 const ENV_FILE = '.env'
@@ -13,17 +12,12 @@ const splitComma = (value: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-const logLevel = Object.keys(LOG_LEVELS) as LogLevel[]
-
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
   NODE_ENV: z.enum(AppEnv).default(AppEnv.DEVELOPMENT),
   BASE_URL: z.string().default('http://localhost:3000'),
   CORS_ORIGINS: z.string().default('').transform(splitComma),
-  LOG_LEVEL_CONSOLE: z.enum(logLevel).default('info'),
-  LOG_LEVEL_FILE: z.enum(logLevel).default('info'),
-  LOG_LEVEL_ERROR_FILE: z.enum(logLevel).default('error'),
-  LOG_SILENT: z.stringbool().default(false),
+  LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   LOG_FILE: z.stringbool().default(false),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 })

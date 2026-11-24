@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { AppError } from '@/core/error'
-import { HttpStatus } from '@/shared/constants'
+import { HttpStatus } from '@/shared/consts'
 import { validate } from './validate'
 import type { Request, Response } from 'express'
 

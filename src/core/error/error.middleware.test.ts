@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { env } from '@/core/config'
-import { ERRORS, HttpStatus } from '@/shared/constants'
+import { ERRORS, HttpStatus } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 import { AppError } from './app-error'
 import { errorHandler } from './error.middleware'

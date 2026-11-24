@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/constants'
+import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/consts'
 import { AppError } from './app-error'
 import { wrapUnexpected } from './wrap-unexpected'
 

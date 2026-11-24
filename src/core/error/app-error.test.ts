@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ErrorSeverity, HttpStatus } from '@/shared/constants'
+import { ErrorSeverity, HttpStatus } from '@/shared/consts'
 import { AppError } from './app-error'
 import type { Request } from 'express'
 

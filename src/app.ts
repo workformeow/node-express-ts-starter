@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { corsOptions, helmetOptions, rateLimitOptions } from '@/core/config'
 import { errorHandler } from '@/core/error'
-import { requestLogger } from '@/core/middleware'
+import { requestLogger } from '@/core/http'
 import { mainRoutes } from '@/routes'
 import type { Express } from 'express'
 

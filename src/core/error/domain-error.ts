@@ -1,4 +1,4 @@
-import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/constants'
+import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/consts'
 import { AppError } from './app-error'
 
 type ErrorMetadata = Record<string, unknown>

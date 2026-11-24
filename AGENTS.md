@@ -44,7 +44,7 @@ When tests are requested, follow this standard so output stays consistent across
 - **Assertions** — prefer `toEqual`/`toMatchObject` for object shape, `toBe` for primitives. Avoid loosely-typed matchers like `expect.any(Array)` where they trigger `@typescript-eslint/no-unsafe-assignment`; assert the field(s) individually instead.
 - **Coverage priority** — cover branches, edge cases, and any bug uncovered while writing the test (document it with a test rather than silently fixing it, unless asked to fix). Skip near-zero-risk one-liners (trivial wrappers, pure re-exports) unless asked.
 - **Lint/type clean** — test files follow the same rules as production code (§3): no `any`, unused params prefixed `_`, etc. `npm run fix` and `npm run typecheck` must both pass.
-- **Quiet runs** — `vitest.config.ts` sets `LOG_SILENT=true`, so the logger writes nothing (no console noise, no `logs/` folder). Don't assert on log output via real transports; mock `@/core/logger` if a test needs to check what was logged.
+- **Quiet runs** — `vitest.config.ts` sets `NODE_ENV=test`, which makes the logger silent (no console noise) and `LOG_FILE` stays `false` (no `logs/` folder). Don't assert on log output via real transports; mock `@/core/logger` if a test needs to check what was logged.
 - Run `npm test` before calling a change done whenever test files were touched (see §8).
 
 ## 2. Architecture & layering
@@ -52,13 +52,13 @@ When tests are requested, follow this standard so output stays consistent across
 ```
 src/
   core/          # Infrastructure, app-wide. Knows nothing about specific features.
-    config/      # env loading + Zod validation, runtime options (cors/helmet/rate-limit)
+    config/      # env.ts (load .env + Zod validation), runtime options (cors/helmet/rate-limit)
     error/       # AppError, domain errors, error logger, error middleware, wrapUnexpected
-    logger/      # Winston setup
-    middleware/  # custom Express middleware (validate)
+    http/        # custom Express middleware (validate, requestLogger)
+    logger/      # Winston setup (framework-agnostic — no Express)
     server/      # bootstrap + graceful shutdown (onShutdown hooks)
   features/      # Business features. One folder per feature. May import core + shared.
-  shared/        # Pure building blocks (constants, types, utils). No feature/business logic.
+  shared/        # Pure building blocks (consts, types, utils). No feature/business logic.
   app.ts         # createApp(): global middleware + routes + errorHandler
   main.ts        # Entry point: startServer (+ onShutdown registrations)
   routes.ts      # Root router: mounts every feature router
@@ -91,13 +91,13 @@ features/todo/
   index.ts                   # composition root — picks the adapter, wires everything, exports todoRouter
 ```
 
-| File                                            | May import                                                         | Must NOT import                                                                                   |
-| ----------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `*.entity.ts`, `*.repository.ts` (port)         | other business files of the same feature, `@/shared`               | `express`, DB clients, `@/core/middleware`, `HttpStatus`                                          |
-| `*.service.ts`                                  | entity, port, `@/core/error` (domain errors), `@/shared/constants` | `express`, DB clients (`@/core/database`, ORM/driver packages), `@/core/middleware`, `HttpStatus` |
-| `*.repository.<driver>.ts` (adapter)            | entity, port, DB client, `wrapUnexpected`                          | `express`                                                                                         |
-| `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validate`, the service type                | DB clients                                                                                        |
-| `index.ts`                                      | everything in the feature                                          | —                                                                                                 |
+| File                                            | May import                                                      | Must NOT import                                                                             |
+| ----------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `*.entity.ts`, `*.repository.ts` (port)         | other business files of the same feature, `@/shared`            | `express`, DB clients, `@/core/http`, `HttpStatus`                                          |
+| `*.service.ts`                                  | entity, port, `@/core/error` (domain errors), `@/shared/consts` | `express`, DB clients (`@/core/database`, ORM/driver packages), `@/core/http`, `HttpStatus` |
+| `*.repository.<driver>.ts` (adapter)            | entity, port, DB client, `wrapUnexpected`                       | `express`                                                                                   |
+| `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validate`, the service type             | DB clients                                                                                  |
+| `index.ts`                                      | everything in the feature                                       | —                                                                                           |
 
 The "Must NOT import" column is **enforced by ESLint** (`no-restricted-imports` overrides in `eslint.config.mjs`): the business layer (`*.{service,entity,repository}.ts`), storage adapters (`*.repository.*.ts`, no Express), and the HTTP layer (`*.{controller,routes,schema}.ts`, no DB client). If lint flags an import, move the code to the right layer. Don't disable the rule. The DB-client list there covers common Node drivers/ORMs; if a project uses one that isn't listed, add it.
 
@@ -156,20 +156,19 @@ startServer(createApp(), env.PORT)
 - Keep `undefined` for values sourced from an external dependency/runtime API that already returns
   `undefined` (`process.env.X`, `Array.prototype.find`, etc.) — don't convert at the boundary.
 - Keep `undefined` anywhere the logging or response layer treats it as a deliberate **elision**
-  sentinel — don't "fix" these. `extractMetadata` (`core/logger/logger.ts`) drops any metadata key
-  whose value is `undefined` but logs `null` values as-is, and `JSON.stringify` drops `undefined`
-  object fields but serializes `null` explicitly (see `error.middleware.ts`'s dev-only `data`
-  field). Swapping one of these to `null` isn't a no-op — a field that was cleanly omitted from a
-  log line or response body would start showing up as an explicit `null`. `core/logger/stack.ts`'s
-  `getCallerSource` is the concrete example: it looks like a "value we control, prefer null" case,
-  but it feeds straight into that elision path, so it stays `undefined`.
+  sentinel — don't "fix" these. `JSON.stringify` (used by the JSON log format and by every
+  response body) drops `undefined` object fields but serializes `null` explicitly (see
+  `error.middleware.ts`'s dev-only `data` field). Swapping one of these to `null` isn't a no-op —
+  a field that was cleanly omitted from a log line or response body would start showing up as an
+  explicit `null`.
 
 ### Logging & env
 
-- Never use `console.*` for app logging — use the Winston `logger` from `@/core/logger` (`console.info`/`warn`/`error` are only tolerated inside `core/config/env/env.ts`, for bootstrap messages that run before the logger/env are ready).
+- Never use `console.*` for app logging — use the Winston `logger` from `@/core/logger` (`console.info`/`warn`/`error` are only tolerated inside `core/config/env.ts`, for bootstrap messages that run before the logger/env are ready).
 - Never read `process.env` directly outside `core/config`. Import the validated `env` from `@/core/config`.
-- `LOG_SILENT=true` turns off every transport (console and both file transports; file transports aren't even created). It's for tests and one-off scripts. Never set it in `.env.prod`.
-- Log-only strings (bootstrap `console.*` lines and Winston `logger` messages, never sent to a client) live in the `LOG` constant (`@/shared/constants`), grouped by subsystem (`LOG.CONFIG`, `LOG.SERVER`), never in `SUCCESS`/`ERRORS` — those two are API-response message pools only. See §4.
+- The `logger` is the plain Winston instance — call `logger.info(message, meta)`; for a level only known at runtime use `logger.log(level, message, meta)`. `meta` is a flat context object (`{ id }`), no secrets.
+- Logger behavior is driven by env only: `LOG_LEVEL` (one level for every transport; the error file is always `error`), `LOG_FILE=true` adds daily JSON files in `logs/` (`YYYY-MM-DD.log` 14d, `YYYY-MM-DD.error.log` 30d), and `NODE_ENV=test` silences everything. Console output is colored text in development and JSON in production.
+- Log-only strings (bootstrap `console.*` lines and Winston `logger` messages, never sent to a client) live in the `LOG` constant (`@/shared/consts`), grouped by subsystem (`LOG.CONFIG`, `LOG.SERVER`), never in `SUCCESS`/`ERRORS` — those two are API-response message pools only. See §4.
 
 ### File naming (kebab-case + role suffix)
 
@@ -191,22 +190,19 @@ Skip files you genuinely don't need. For example, `src/features/health/` only ha
 
 `<feature>.entity.ts` holds domain types the business layer works with. `<feature>.type.ts` is for anything else (e.g. response `data` shapes that differ from an entity, like `LoginData`).
 
-Middleware is the one exception to the role-suffix rule: files under `src/core/middleware/` skip the `.middleware.ts` suffix — the folder itself already says "middleware", so the suffix would be redundant. Feature-local middleware, if a feature ever needs its own, follows the same no-suffix rule.
+Middleware is the one exception to the role-suffix rule: files under `src/core/http/` skip the `.middleware.ts` suffix — every file in that folder is Express middleware, so the suffix would be redundant. Feature-local middleware, if a feature ever needs its own, follows the same no-suffix rule.
 
-**Messages:** generic, reusable text (CRUD success/fail wording, HTTP-generic errors) belongs in `SUCCESS`/`ERRORS` in `shared/constants/message.const.ts` — extend it, don't duplicate. Both pools are **flat, two levels**: `UPPER_CASE` keys are fixed text (`ERRORS.UNAUTHORIZED`), `camelCase` keys are builders (`SUCCESS.create('todo')`, `ERRORS.notFound('Todo')`). Don't add a nested group to them. A feature keeps its own `<feature>.const.ts` exporting one `<FEATURE>_MESSAGE` object (e.g. `AUTH_MESSAGE.LOGIN` in `auth.const.ts`) for text specific to that feature's domain (e.g. "Invalid email or password") that wouldn't make sense reused elsewhere. That keeps the shared pools flat and the feature's text deleted along with the feature. Default to the shared pools when in doubt. `LOG` is the exception: it keeps a subsystem group (`LOG.CONFIG.load`) because the group says where the line comes from.
+**Messages:** generic, reusable text (CRUD success/fail wording, HTTP-generic errors) belongs in `SUCCESS`/`ERRORS` in `shared/consts/message.const.ts` — extend it, don't duplicate. Both pools are **flat, two levels**: `UPPER_CASE` keys are fixed text (`ERRORS.UNAUTHORIZED`), `camelCase` keys are builders (`SUCCESS.create('todo')`, `ERRORS.notFound('Todo')`). Don't add a nested group to them. A feature keeps its own `<feature>.const.ts` exporting one `<FEATURE>_MESSAGE` object (e.g. `AUTH_MESSAGE.LOGIN` in `auth.const.ts`) for text specific to that feature's domain (e.g. "Invalid email or password") that wouldn't make sense reused elsewhere. That keeps the shared pools flat and the feature's text deleted along with the feature. Default to the shared pools when in doubt. `LOG` is the exception: it keeps a subsystem group (`LOG.CONFIG.load`) because the group says where the line comes from.
 
 ### Config (`src/core/config/`)
 
-| File                | Responsibility                                                             |
-| ------------------- | -------------------------------------------------------------------------- |
-| `env/env.type.ts`   | `EnvConfig` type — hand-authored, no side effects                          |
-| `env/env.schema.ts` | Zod schema typed as `z.ZodType<EnvConfig>`, so schema and type can't drift |
-| `env/env.ts`        | Resolves the right `.env.*` file, validates via `envSchema`, exports `env` |
-| `env/index.ts`      | Barrel — re-exports `env` + `EnvConfig`                                    |
-| `options.ts`        | Env-dependent middleware options (cors/helmet/rate-limit)                  |
-| `index.ts`          | Barrel — import `env` and options from here                                |
+| File         | Responsibility                                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `env.ts`     | Loads `.env` via `process.loadEnvFile()` (logs and continues if missing), validates with the Zod schema, exports `env` (exits on invalid) |
+| `options.ts` | Env-dependent middleware options (cors/helmet/rate-limit)                                                                                 |
+| `index.ts`   | Barrel — import `env` and options from here                                                                                               |
 
-Import `env` from `@/core/config`, never from `./env/env`. Add env-dependent middleware options to `options.ts`, not `shared/`. Numeric env vars use `z.coerce.number()` (not `.transform(Number)`, which silently lets `NaN` through) with explicit bounds (`.int().positive()`, `.max(...)` where a natural ceiling exists).
+Import `env` from `@/core/config`. The schema is the single source of truth: the `Env` type is `z.infer` of it, so there is no hand-written type to keep in sync. Every non-secret variable gets a `.default()` so copying `.env.example` (or no `.env` at all) just works; note Zod 4 does not validate default values, so a default must already be the parsed type. Numeric env vars use `z.coerce.number()` (not `.transform(Number)`, which silently lets `NaN` through) with explicit bounds (`.int().positive()`, `.max(...)` where a natural ceiling exists). Booleans use `z.stringbool()`. Add env-dependent middleware options to `options.ts`, not `shared/`.
 
 ## 4. The response & error contract
 
@@ -216,7 +212,7 @@ Import `env` from `@/core/config`, never from `./env/env`. Add env-dependent mid
 { message: string, timestamp: string, data?: T }
 ```
 
-- Response messages come from `SUCCESS`/`ERRORS` in `@/shared/constants`, or from a feature-local `<feature>.const.ts` for messages specific to that feature's domain (see §3) — never hardcoded inline strings. These are plain strings — no i18n key/message object (see §1).
+- Response messages come from `SUCCESS`/`ERRORS` in `@/shared/consts`, or from a feature-local `<feature>.const.ts` for messages specific to that feature's domain (see §3) — never hardcoded inline strings. These are plain strings — no i18n key/message object (see §1).
 - Log-only strings (startup/config/server logs, never sent to a client) come from the separate `LOG` constant in the same file. Don't mix the two: if it's only ever written to a log (`console.*` or `logger`), it belongs in `LOG`, not `SUCCESS`/`ERRORS`.
 - HTTP codes come from the `HttpStatus` enum, never magic numbers. Only adapters (controller, routes, middleware, `core/`) use it; the business layer can't (§2).
 - **In the business layer, throw a domain error** (`@/core/error`). It says _what_ went wrong, and `core/error` decides the HTTP status and severity once for the whole app:
@@ -287,7 +283,7 @@ each step (`data` -> `response` -> `res.status(...).json(response)`) on its own 
 sequence of named steps instead of one dense expression:
 
 ```ts
-import { HttpStatus, SUCCESS } from '@/shared/constants'
+import { HttpStatus, SUCCESS } from '@/shared/consts'
 import { createResponse } from '@/shared/utils'
 import type { Todo } from './todo.entity'
 import type { CreateTodoInput, TodoIdParams } from './todo.schema'
@@ -327,7 +323,7 @@ Routers are also factories. They take the controller, put `validate(...)` in fro
 
 ```ts
 import { Router } from 'express'
-import { validate } from '@/core/middleware'
+import { validate } from '@/core/http'
 import { todoSchema } from './todo.schema'
 import type { TodoController } from './todo.controller'
 
@@ -382,7 +378,7 @@ export interface TodoRepository {
 
 ```ts
 import { ConflictError, NotFoundError } from '@/core/error'
-import { ERRORS } from '@/shared/constants'
+import { ERRORS } from '@/shared/consts'
 import type { NewTodo, Todo } from './todo.entity'
 import type { TodoRepository } from './todo.repository'
 
@@ -466,7 +462,7 @@ export const createMysqlTodoRepository = (pool: Pool): TodoRepository => ({
 
 ```ts
 import { z } from 'zod'
-import { ERRORS } from '@/shared/constants'
+import { ERRORS } from '@/shared/consts'
 
 const createBody = z.object({
   title: z
@@ -506,7 +502,7 @@ export const todoRouter = createTodoRouter(todoController)
 export type { Todo } from './todo.entity'
 ```
 
-9. **Add messages** instead of inline strings. Reuse `SUCCESS.*` / `ERRORS.*` (`@/shared/constants`) first; add a generic entry there only if other features could reuse it. Text that only makes sense for this feature goes in `<feature>.const.ts` (§3):
+9. **Add messages** instead of inline strings. Reuse `SUCCESS.*` / `ERRORS.*` (`@/shared/consts`) first; add a generic entry there only if other features could reuse it. Text that only makes sense for this feature goes in `<feature>.const.ts` (§3):
 
 ```ts
 // auth.const.ts
@@ -530,16 +526,16 @@ router.use('/todos', todoRouter)
 
 ## 7. Middleware
 
-Third-party middleware (`cors`, `helmet`, `express-rate-limit`) is configured as plain options in `core/config/options.ts` and applied in `app.ts`. Custom middleware lives in `src/core/middleware/`:
+Third-party middleware (`cors`, `helmet`, `express-rate-limit`) is configured as plain options in `core/config/options.ts` and applied in `app.ts`. Custom middleware lives in `src/core/http/` (the Express-facing part of `core`; `core/logger` stays framework-agnostic):
 
 | File                | Export                     | Purpose                                                                                                                                                                                                                                                                                            |
 | ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `validate.ts`       | `validate(ValidatedShape)` | Parses `params` -> `query` -> `body` with the Zod schema given for each (all optional). On success it replaces that segment with the parsed data. On the first failure it calls `next()` with a `422` `AppError` that joins all issue messages, with `metadata.source` set to the failing segment. |
-| `request-logger.ts` | `requestLogger`            | `morgan` access log routed through the Winston `logger` at `http` level, so it follows the same transports, levels, and `LOG_SILENT` as every other log line.                                                                                                                                      |
+| `request-logger.ts` | `requestLogger`            | `morgan` access log routed through the Winston `logger` at `http` level (via morgan's `stream` option), so it follows the same format, transports, and test silencing as every other log line. Visible when `LOG_LEVEL` is `http` or more verbose.                                                 |
 
 Adding more:
 
-- Cross-feature middleware (auth guard, role check, …) goes in `src/core/middleware/`, one file per concern (`<name>.ts`, no `.middleware.ts` suffix, since the folder already says that), exported from its `index.ts`. Put its types in `<name>.type.ts` beside it.
+- Cross-feature middleware (auth guard, role check, …) goes in `src/core/http/`, one file per concern (`<name>.ts`, no `.middleware.ts` suffix, see §3), exported from its `index.ts`. Put its types in `<name>.type.ts` beside it.
 - Feature-specific middleware can live in the feature folder instead.
 - Wire global middleware in `app.ts`; per-route middleware in the feature's `*.routes.ts`.
 
@@ -574,7 +570,7 @@ only complete once all four stages pass and the router is mounted in `src/routes
 - DO validate input with `validate(<feature>Schema.<action>)` in the route, not `schema.parse()` in the controller.
 - DO wrap DB/SDK calls in `wrapUnexpected`, and register connection cleanup with `onShutdown`.
 - DO put log-only strings in `LOG`, not `SUCCESS`/`ERRORS` (see §4).
-- DO add new env vars to the Zod schema (`core/config/env/env.schema.ts`), the `EnvConfig` type (`core/config/env/env.type.ts`), and `.env.example`; use `z.coerce.number()` for numeric ones.
+- DO add new env vars to the Zod schema in `core/config/env.ts` (with a `.default()` unless it's a secret) and to `.env.example`; use `z.coerce.number()` for numeric ones.
 - DON'T import across features, hardcode response strings, throw raw `Error`, use `any`, read `process.env` directly, or use `console.log`.
 - DON'T import Express, a DB client, or `HttpStatus` into `*.service.ts` / `*.entity.ts` / `*.repository.ts`, and don't `eslint-disable` the boundary rule to get around it (§2).
 - DON'T leak ORM/driver types through a repository port; map rows to entities in the adapter.

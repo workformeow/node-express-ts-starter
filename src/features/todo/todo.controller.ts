@@ -1,4 +1,4 @@
-import { HttpStatus, SUCCESS } from '@/shared/constants'
+import { HttpStatus, SUCCESS } from '@/shared/consts'
 import { createResponse } from '@/shared/utils'
 import type { Todo } from './todo.entity'
 import type { CreateTodoInput, TodoIdParams } from './todo.schema'

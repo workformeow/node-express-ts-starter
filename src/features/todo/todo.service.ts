@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError } from '@/core/error'
-import { ERRORS } from '@/shared/constants'
+import { ERRORS } from '@/shared/consts'
 import type { NewTodo, Todo } from './todo.entity'
 import type { TodoRepository } from './todo.repository'
 

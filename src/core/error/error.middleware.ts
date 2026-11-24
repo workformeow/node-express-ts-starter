@@ -1,6 +1,6 @@
 import { env } from '@/core/config'
 import { logger } from '@/core/logger'
-import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/constants'
+import { ERRORS, ErrorSeverity, HttpStatus } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 import { createResponse } from '@/shared/utils'
 import { AppError } from './app-error'
