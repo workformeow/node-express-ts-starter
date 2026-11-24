@@ -150,7 +150,7 @@ export default defineConfig(
       eqeqeq: 'error', // require === / !== over == / !=
       'no-var': 'error', // block-scoped declarations only
       'prefer-const': 'error', // catch accidental reassignment
-      curly: ['error', 'all'], // always require braces around blocks
+      curly: ['error', 'multi-line'], // always require braces around blocks
       '@typescript-eslint/no-floating-promises': 'error', // every Promise must be awaited/handled
       '@typescript-eslint/no-misused-promises': 'error', // catch async fns passed where sync is expected
       '@typescript-eslint/only-throw-error': 'error', // always throw Error instances (type-aware version of no-throw-literal)

@@ -1,7 +1,7 @@
 import express from 'express'
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
-import { errorHandler } from '@/core/error'
+import { errorHandler } from '@/core/http'
 import { HttpStatus } from '@/shared/consts'
 import type { AppResponse } from '@/shared/types'
 import { createTodoController } from './todo.controller'

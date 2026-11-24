@@ -61,6 +61,14 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 - [ ] รองรับ Vercel: `api/index.ts` (`export default app`) + `vercel.json`
 - [ ] ตรวจ Render / Docker ใช้ได้ด้วย env จาก platform อย่างเดียว (ไม่มี `.env`)
+- [ ] `docker-compose.yml`: `env_file: .env` + `NODE_ENV: production` (เลิกใช้ `.env.prod`); อัปเดต README ส่วน Docker
+
+## Phase 8 — SQLite adapter (optional)
+
+- [ ] เพิ่ม `todo.repository.sqlite.ts` ด้วย `node:sqlite` (built-in, ไม่ต้อง install) — ตัวอย่าง adapter ของ driver จริง
+- [ ] map row → entity, แปล "not found" (`changes === 0`) เป็น `null`/`false`
+- [ ] สลับ adapter ใน `todo/index.ts` บรรทัดเดียว; `.memory.ts` เก็บไว้ใช้กับ service test
+- [ ] ตรวจสถานะ stability ของ `node:sqlite` ใน Node 26 ก่อนเริ่ม
 
 ---
 
@@ -75,3 +83,4 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 | Logger                  | winston ต่อ แต่ใช้ format สำเร็จรูป                                |
 | `app.ts` / `main.ts`    | แยกไว้ — test และ Vercel ต้อง import app โดยไม่ `listen`         |
 | try/catch ใน controller | ลบ — Express 5 จัดการให้                                        |
+| return type             | ไม่ใส่ `void` / `Promise<void>` — ใส่เฉพาะเมื่อ return ข้อมูล        |

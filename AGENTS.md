@@ -14,7 +14,7 @@ If anything here conflicts with the actual code, the code wins — update this f
 
 ## 1. What this project is
 
-A feature-based REST API **starter**: **Node.js (ESM) + Express 5 + TypeScript 6**. Environment is validated with Zod, logging uses Winston, and errors flow through a single error middleware. It ships as a clean base for new projects to build on top of.
+A feature-based REST API **starter**: **Node.js (ESM) + Express 5 + TypeScript 6**. Environment is validated with Zod, logging uses Winston, and errors flow through a single error handler. It ships as a clean base for new projects to build on top of.
 
 Folders are split **by feature**, and each feature is layered **Clean Architecture style**. Business logic (entity, repository port, service) never depends on Express, the DB, or HTTP status codes, and ESLint enforces this (§2). `src/features/todo/` is the reference implementation. Copy its shape for new features.
 
@@ -32,7 +32,7 @@ Test runner: **Vitest** (`npm test` / `npm run test:watch`, config in `vitest.co
 
 When tests are requested, follow this standard so output stays consistent across the codebase:
 
-- **Placement & naming** — `<name>.test.ts` beside the file under test (e.g. `error-logger.ts` -> `error-logger.test.ts`), mirroring the production layering. No separate `test/` or `__tests__/` folder.
+- **Placement & naming** — `<name>.test.ts` beside the file under test (e.g. `error-handler.ts` -> `error-handler.test.ts`), mirroring the production layering. No separate `test/` or `__tests__/` folder.
 - **Structure** — one `describe` per exported function/class; one `it` per behavior. Name `it` blocks after the observable outcome ("returns undefined when stack has no frames"), not implementation steps or generic labels ("test 1", "works").
 - **Mocking** —
   - Keep `vi.fn()` mocks as local typed variables and assert against those variables directly; don't read a mock back off a property whose declared type comes from an external interface (e.g. Express's `Response`) — that trips `@typescript-eslint/unbound-method` because the rule checks the declared type, not the runtime value.
@@ -53,8 +53,8 @@ When tests are requested, follow this standard so output stays consistent across
 src/
   core/          # Infrastructure, app-wide. Knows nothing about specific features.
     config/      # env.ts (load .env + Zod validation), runtime options (cors/helmet/rate-limit)
-    error/       # AppError, domain errors, error logger, error middleware, wrapUnexpected
-    http/        # custom Express middleware (validate, requestLogger)
+    error/       # AppError + domain errors (no Express — services import these)
+    http/        # Express middleware (validateRequest, requestLogger, errorHandler)
     logger/      # Winston setup (framework-agnostic — no Express)
     server/      # bootstrap + graceful shutdown (onShutdown hooks)
   features/      # Business features. One folder per feature. May import core + shared.
@@ -85,7 +85,7 @@ features/todo/
   todo.repository.ts         # business  — port: interface the service needs from storage
   todo.service.ts            # business  — rules; createTodoService({ todoRepo })
   todo.repository.memory.ts  # adapter   — implements the port (in-memory; later .mysql.ts, .mongo.ts, …)
-  todo.schema.ts             # adapter   — Zod input schemas for validate()
+  todo.schema.ts             # adapter   — Zod input schemas for validateRequest()
   todo.controller.ts         # adapter   — Express handlers; createTodoController(service)
   todo.routes.ts             # adapter   — createTodoRouter(controller)
   index.ts                   # composition root — picks the adapter, wires everything, exports todoRouter
@@ -95,8 +95,8 @@ features/todo/
 | ----------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `*.entity.ts`, `*.repository.ts` (port)         | other business files of the same feature, `@/shared`            | `express`, DB clients, `@/core/http`, `HttpStatus`                                          |
 | `*.service.ts`                                  | entity, port, `@/core/error` (domain errors), `@/shared/consts` | `express`, DB clients (`@/core/database`, ORM/driver packages), `@/core/http`, `HttpStatus` |
-| `*.repository.<driver>.ts` (adapter)            | entity, port, DB client, `wrapUnexpected`                       | `express`                                                                                   |
-| `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validate`, the service type             | DB clients                                                                                  |
+| `*.repository.<driver>.ts` (adapter)            | entity, port, DB client, `AppError`                             | `express`                                                                                   |
+| `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validateRequest`, the service type      | DB clients                                                                                  |
 | `index.ts`                                      | everything in the feature                                       | —                                                                                           |
 
 The "Must NOT import" column is **enforced by ESLint** (`no-restricted-imports` overrides in `eslint.config.mjs`): the business layer (`*.{service,entity,repository}.ts`), storage adapters (`*.repository.*.ts`, no Express), and the HTTP layer (`*.{controller,routes,schema}.ts`, no DB client). If lint flags an import, move the code to the right layer. Don't disable the rule. The DB-client list there covers common Node drivers/ORMs; if a project uses one that isn't listed, add it.
@@ -145,6 +145,8 @@ startServer(createApp(), env.PORT)
 - `any` is banned (`@typescript-eslint/no-explicit-any`). Use `unknown` + narrowing.
 - Prefix intentionally unused params with `_` (e.g. `_req`, `_next`).
 - Every Promise must be awaited or handled (`no-floating-promises`).
+- Return types: omit them when the function returns nothing (`void` / `Promise<void>` — handlers, middleware); inference is enough and the signature stays short. Write them when the function returns data others depend on (services, repository ports, utils), so a mistake like a forgotten `null` check fails where it happens instead of leaking `Todo | null` to the caller.
+- Single-line guard clauses may skip braces (`if (!x) return`, `curly: multi-line`); a body on its own line always gets braces.
 
 #### `null` vs `undefined`
 
@@ -158,7 +160,7 @@ startServer(createApp(), env.PORT)
 - Keep `undefined` anywhere the logging or response layer treats it as a deliberate **elision**
   sentinel — don't "fix" these. `JSON.stringify` (used by the JSON log format and by every
   response body) drops `undefined` object fields but serializes `null` explicitly (see
-  `error.middleware.ts`'s dev-only `data` field). Swapping one of these to `null` isn't a no-op —
+  `error-handler.ts`'s dev-only `data` field). Swapping one of these to `null` isn't a no-op —
   a field that was cleanly omitted from a log line or response body would start showing up as an
   explicit `null`.
 
@@ -182,7 +184,7 @@ startServer(createApp(), env.PORT)
 | Repository adapter | `<feature>.repository.<driver>.ts` | `todo.repository.memory.ts`   |
 | Validation (Zod)   | `<feature>.schema.ts`              | `todo.schema.ts`              |
 | Types              | `<feature>.type.ts`                | `auth.type.ts`                |
-| Middleware         | `<name>.ts`                        | `validate.ts`                 |
+| Middleware         | `<name>.ts`                        | `validate-request.ts`         |
 | Constants          | `<name>.const.ts`                  | `message.const.ts`            |
 | Barrel / wiring    | `index.ts`                         | composition root + public API |
 
@@ -215,72 +217,68 @@ Import `env` from `@/core/config`. The schema is the single source of truth: the
 - Response messages come from `SUCCESS`/`ERRORS` in `@/shared/consts`, or from a feature-local `<feature>.const.ts` for messages specific to that feature's domain (see §3) — never hardcoded inline strings. These are plain strings — no i18n key/message object (see §1).
 - Log-only strings (startup/config/server logs, never sent to a client) come from the separate `LOG` constant in the same file. Don't mix the two: if it's only ever written to a log (`console.*` or `logger`), it belongs in `LOG`, not `SUCCESS`/`ERRORS`.
 - HTTP codes come from the `HttpStatus` enum, never magic numbers. Only adapters (controller, routes, middleware, `core/`) use it; the business layer can't (§2).
-- **In the business layer, throw a domain error** (`@/core/error`). It says _what_ went wrong, and `core/error` decides the HTTP status and severity once for the whole app:
 
-  | Error                                | Use when                                       | Status | Severity |
-  | ------------------------------------ | ---------------------------------------------- | ------ | -------- |
-  | `NotFoundError(resource, metadata?)` | a referenced record doesn't exist              | 404    | WARN     |
-  | `ConflictError(message, metadata?)`  | uniqueness / state conflict (duplicate title…) | 409    | WARN     |
-  | `UnauthorizedError(message, meta?)`  | credentials/token invalid                      | 401    | WARN     |
-  | `BusinessRuleError(message, meta?)`  | input is well-formed but breaks a domain rule  | 422    | WARN     |
+### Errors
 
-  ```ts
-  throw new NotFoundError('Todo', { id }).withOperation('getTodo')
-  throw new ConflictError(ERRORS.alreadyExists('Todo title'), { title }).withOperation('createTodo')
-  ```
-
-  They extend `AppError`, so builder methods, `errorHandler`, and logging work unchanged. If none fits, add a new class in `core/error/domain-error.ts` rather than reaching for `HttpStatus` in a service.
-
-- Outside the business layer (middleware, `core/`, a controller-only feature like `health`), `throw new AppError(message, status, severity)` directly and chain context. Either way, errors reach `next(error)` and the global `errorHandler` (`core/error/error.middleware.ts`, wired in `app.ts`) formats them (full details in development, message-only in production).
-- Wrap every call into an external dependency (DB/ORM, third-party SDK, HTTP client) in `wrapUnexpected(promise, operation, metadata?, message?)` (`@/core/error`). `errorHandler` already replaces any non-`AppError` message with a generic one, so this is about log context: `wrapUnexpected` rethrows any non-`AppError` as a generic `500` `AppError` tagged with `operation` + `metadata`, and keeps the original as `metadata.cause` for the logs. An `AppError` thrown inside passes through unchanged:
-
-  **Always split the query and the wrap into two statements**: build the call into a variable, then await it through `wrapUnexpected` on the next line. Line 1 = what runs, line 2 = how its failure is handled.
-
-  ```ts
-  const query = pool.execute<TodoRow[]>('SELECT * FROM todos WHERE id = ?', [id])
-  const [rows] = await wrapUnexpected(query, 'todoRepository.findById', { id })
-  ```
-
-  - **Keep the two lines adjacent.** Some clients are lazy (Prisma) but many start running on the call (mysql2, pg). An `await` in between could let the promise reject before anything handles it.
-  - **Naming:** one wrapped call in the function → `query`. More than one → `<resultName>Query` after the variable it resolves into (`existingQuery` -> `existing`), or `<verb><Entity>Query` when the result isn't kept or is destructured (`deleteTodoQuery`).
-  - **No result / direct return:** same shape, `await wrapUnexpected(query, ...)` or `return wrapUnexpected(query, ...)`.
-  - **Multi-step logic that isn't one call** (an SDK that returns `{ error }` instead of throwing): wrap it in an immediately-invoked `async` function named after the action, then wrap that.
-  - **`metadata` is the flat context object** (`{ id }`), not `{ metadata: { id } }`. No secrets.
-
-- Malformed JSON request bodies never reach a controller — `express.json()` throws before routing, and the error isn't an `AppError`. `errorHandler` detects this case (`SyntaxError` with `.type === 'entity.parse.failed'`) and normalizes it to a `400` `AppError` (`ERRORS.INVALID_JSON_BODY`) instead of leaking the raw parser message and defaulting to `500`. Follow the same normalize-before-formatting approach for any other non-`AppError` exception that has a well-known client-facing meaning.
-
-`AppError` builder methods:
+Everything lives in `core/error/app-error.ts`:
 
 ```ts
-throw new AppError(ERRORS.UNAUTHORIZED, HttpStatus.UNAUTHORIZED, ErrorSeverity.WARN)
-  .withOperation('login') // logical operation name
-  .withEndpoint(req) // method, url, params, query, body
-  .withMetadata({ email }) // extra structured context (no secrets/passwords)
+new AppError(message, status?, metadata?, options?)
+// status: HttpStatus (default 500) · metadata: flat context, e.g. { id } · options: native { cause }
+```
+
+- **In the business layer, throw a domain error.** It says _what_ went wrong; the class picks the HTTP status, so services never import `HttpStatus`:
+
+  | Error                                   | Use when                                       | Status |
+  | --------------------------------------- | ---------------------------------------------- | ------ |
+  | `NotFoundError(resource, metadata?)`    | a referenced record doesn't exist              | 404    |
+  | `ConflictError(message, metadata?)`     | uniqueness / state conflict (duplicate title…) | 409    |
+  | `UnauthorizedError(message, metadata?)` | credentials/token invalid                      | 401    |
+  | `BusinessRuleError(message, metadata?)` | input is well-formed but breaks a domain rule  | 422    |
+
+  ```ts
+  throw new NotFoundError('Todo', { id })
+  throw new ConflictError(ERRORS.alreadyExists('Todo title'), { title })
+  ```
+
+  If none fits, add a subclass in `app-error.ts` (same three-line shape) rather than reaching for `HttpStatus` in a service.
+
+- **Outside the business layer** (middleware, `core/`, a controller-only feature like `health`), `throw new AppError(message, HttpStatus.X, metadata)` directly.
+- **`metadata` is a flat context object** (`{ id }`, `{ source }`), not `{ metadata: { id } }`. It goes into the log line, and into the response body in development only. No secrets.
+- **Just throw.** Express 5 forwards both sync throws and rejected promises to the error handler, so controllers and middleware have no `try/catch` and never call `next(error)`.
+
+### `errorHandler` (`core/http/error-handler.ts`, wired last in `app.ts`)
+
+The one place that turns any thrown value into a log line and a response:
+
+1. **Normalize** to an `AppError`: an `AppError` passes through; a malformed JSON body (`SyntaxError` with `.type === 'entity.parse.failed'` from `express.json()`) becomes `400 ERRORS.INVALID_JSON_BODY`; anything else becomes `500 ERRORS.INTERNAL_SERVER_ERROR`. Follow the same approach for any other non-`AppError` exception with a well-known client-facing meaning.
+2. **Log** at `error` for status >= 500, otherwise `warn`, with the **original** message plus `metadata`, `status`, `method`, `url`, and `stack`. Request context is added here, so nobody throwing an error needs to pass `req`.
+3. **Respond** with the normalized (client-safe) message. Development adds `{ name, metadata, stack }` as `data`; production sends message + timestamp only. A raw driver/`TypeError` message never reaches the client.
+
+It must keep all four parameters (`error, req, res, _next`) — Express recognizes error middleware by arity.
+
+**Unexpected errors from a DB/SDK need no wrapper.** Let them propagate: the handler hides their message from the client and logs it with a stack trace that points at the failing repository call. If a specific call needs extra log context, catch it there and rethrow with the native `cause`:
+
+```ts
+throw new AppError(
+  ERRORS.INTERNAL_SERVER_ERROR,
+  HttpStatus.INTERNAL_SERVER_ERROR,
+  { id },
+  { cause: error }
+)
 ```
 
 ## 5. Controller pattern (copy this shape)
 
-Controllers are thin: read the already-validated input, call a service, return via `createResponse`. Always `async`, return `Promise<void>`, wrap in `try/catch`, and forward errors with `next(error)`.
+Controllers are thin: read the already-validated input, call a service, return via `createResponse`. No `try/catch`, no `next` (§4), and no `Promise<void>` return type (§3).
 
-Input validation is **not** the controller's job. The route runs the `validate` middleware (§7) first. It parses `params`/`query`/`body` with Zod, replaces them with the parsed (coerced/trimmed) values, and turns failures into a `422` `AppError`. The controller types `req` with the schema's inferred types and uses the values directly.
+Input validation is **not** the controller's job. The route runs `validateRequest` (§7) first. It parses `params`/`query`/`body` with Zod, replaces them with the parsed (coerced/trimmed) values, and throws a `422` `AppError` on failure. The controller types `req` with the schema's inferred types and uses the values directly.
 
 Reference implementations: `src/features/todo/` (full layering) and `src/features/health/` (controller-only, no business logic).
 
-A controller in a layered feature is a **factory** that receives the service, so tests can wire it to any service instance (§1 Testing). A controller-only feature like `health` may export plain functions instead.
+A controller with dependencies is a **factory** that receives the service, so tests can wire it to any service instance (§1 Testing). A controller with no dependencies, like `health`, exports plain functions.
 
-Before calling `createResponse`, assign the payload to a locally-typed `data` constant instead of
-passing the service's return value straight through. This makes the response shape visible to
-whoever opens the controller — no need to jump into the service or type file to know what's
-being sent — and, since the type is a plain assignment (not an object literal), it still won't
-catch excess properties on its own; if a field must never leave the service (a token, a hash),
-strip it explicitly via destructuring before this assignment, not just via the type. Type it with
-the entity when the payload _is_ the entity (`Todo`, `Todo[]`). When the shape differs, name a type
-`<Feature><Action>Data` (e.g. `LoginData`) in `<feature>.type.ts`. It describes the `data` field's
-shape, not the full response envelope. Keep the local variable named `data` so it matches
-`createResponse`'s own parameter name. Likewise, assign `createResponse`'s result to its own
-`response` constant before calling `res.json` — don't nest the call inside `.json(...)`. Keeping
-each step (`data` -> `response` -> `res.status(...).json(response)`) on its own line reads as a
-sequence of named steps instead of one dense expression:
+Before calling `createResponse`, assign the payload to a locally-typed `data` constant instead of passing the service's return value straight through. This makes the response shape visible to whoever opens the controller. Since the type is a plain assignment (not an object literal), it won't catch excess properties on its own; if a field must never leave the service (a token, a hash), strip it explicitly via destructuring first. Type it with the entity when the payload _is_ the entity (`Todo`, `Todo[]`). When the shape differs, name a type `<Feature><Action>Data` (e.g. `LoginData`) in `<feature>.type.ts`. Then assign `createResponse`'s result to its own `response` constant, so each step (`data` -> `response` -> `res.status(...).json(response)`) is its own line:
 
 ```ts
 import { HttpStatus, SUCCESS } from '@/shared/consts'
@@ -288,29 +286,19 @@ import { createResponse } from '@/shared/utils'
 import type { Todo } from './todo.entity'
 import type { CreateTodoInput, TodoIdParams } from './todo.schema'
 import type { TodoService } from './todo.service'
-import type { NextFunction, Request, Response } from 'express'
+import type { Request, Response } from 'express'
 
 export const createTodoController = (todoService: TodoService) => {
-  const create = async (
-    req: Request<unknown, unknown, CreateTodoInput>,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> => {
-    try {
-      const data: Todo = await todoService.create(req.body) // already validated by the route
-      const response = createResponse(SUCCESS.create('todo'), data)
-      res.status(HttpStatus.CREATED).json(response)
-    } catch (error) {
-      next(error)
-    }
+  const create = async (req: Request<unknown, unknown, CreateTodoInput>, res: Response) => {
+    const data: Todo = await todoService.create(req.body) // already validated by the route
+    const response = createResponse(SUCCESS.create('todo'), data)
+    res.status(HttpStatus.CREATED).json(response)
   }
 
-  const getById = async (
-    req: Request<TodoIdParams>,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> => {
-    // same shape: data -> response -> res.status(...).json(response)
+  const getById = async (req: Request<TodoIdParams>, res: Response) => {
+    const data: Todo = await todoService.getById(req.params.id)
+    const response = createResponse(SUCCESS.get('todo'), data)
+    res.status(HttpStatus.OK).json(response)
   }
 
   return { create, getById }
@@ -319,19 +307,19 @@ export const createTodoController = (todoService: TodoService) => {
 export type TodoController = ReturnType<typeof createTodoController>
 ```
 
-Routers are also factories. They take the controller, put `validate(...)` in front of any handler that reads input, and return the `Router`:
+Routers are also factories. They take the controller, put `validateRequest(...)` in front of any handler that reads input, and return the `Router`:
 
 ```ts
 import { Router } from 'express'
-import { validate } from '@/core/http'
+import { validateRequest } from '@/core/http'
 import { todoSchema } from './todo.schema'
 import type { TodoController } from './todo.controller'
 
 export const createTodoRouter = (todoController: TodoController): Router => {
   const router = Router()
 
-  router.post('/', validate(todoSchema.create), todoController.create)
-  router.get('/:id', validate(todoSchema.byId), todoController.getById)
+  router.post('/', validateRequest(todoSchema.create), todoController.create)
+  router.get('/:id', validateRequest(todoSchema.byId), todoController.getById)
 
   return router
 }
@@ -390,7 +378,7 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
   const getById = async (id: string): Promise<Todo> => {
     const todo = await todoRepo.findById(id)
     if (!todo) {
-      throw new NotFoundError('Todo', { id }).withOperation('getTodo')
+      throw new NotFoundError('Todo', { id })
     }
     return todo
   }
@@ -399,14 +387,14 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
     if (await todoRepo.findByTitle(data.title)) {
       throw new ConflictError(ERRORS.alreadyExists('Todo title'), {
         title: data.title,
-      }).withOperation('createTodo')
+      })
     }
     return todoRepo.create(data)
   }
 
   const remove = async (id: string): Promise<void> => {
     if (!(await todoRepo.delete(id))) {
-      throw new NotFoundError('Todo', { id }).withOperation('removeTodo')
+      throw new NotFoundError('Todo', { id })
     }
   }
 
@@ -416,8 +404,7 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
 export type TodoService = ReturnType<typeof createTodoService>
 ```
 
-5. **Repository adapter** — `todo.repository.<driver>.ts`. Implements the port. This is the only file that touches storage, and the starter doesn't assume a driver. Every adapter, whatever the DB, does the same three things:
-   - wrap each driver call in `wrapUnexpected` (§4), so a failure is logged with which operation broke;
+5. **Repository adapter** — `todo.repository.<driver>.ts`. Implements the port. This is the only file that touches storage, and the starter doesn't assume a driver. Every adapter, whatever the DB, does the same two things (driver failures need no wrapping — they propagate to `errorHandler`, §4):
    - map rows/documents to entities (drop columns the domain doesn't need, convert `_id` -> `id`, …);
    - translate the driver's "not found" signal into the port's `null`/`false`. Don't throw `NotFoundError` here; that's the service's call.
 
@@ -444,21 +431,19 @@ const toTodo = (row: TodoRow): Todo => ({
 
 export const createMysqlTodoRepository = (pool: Pool): TodoRepository => ({
   findById: async (id) => {
-    const query = pool.execute<TodoRow[]>('SELECT * FROM todos WHERE id = ?', [id])
-    const [rows] = await wrapUnexpected(query, 'todoRepository.findById', { id })
+    const [rows] = await pool.execute<TodoRow[]>('SELECT * FROM todos WHERE id = ?', [id])
     return rows[0] ? toTodo(rows[0]) : null
   },
 
   delete: async (id) => {
-    const query = pool.execute<ResultSetHeader>('DELETE FROM todos WHERE id = ?', [id])
-    const [result] = await wrapUnexpected(query, 'todoRepository.delete', { id })
+    const [result] = await pool.execute<ResultSetHeader>('DELETE FROM todos WHERE id = ?', [id])
     return result.affectedRows > 0
   },
   // ...
 })
 ```
 
-6. **Validation** — `todo.schema.ts` (Zod, the same validator used for env). Keep the individual Zod schemas private. Export one `<feature>Schema` object that groups them per route by request segment (`params`/`query`/`body`, the shape `validate` expects), and export the inferred input types for the controller:
+6. **Validation** — `todo.schema.ts` (Zod, the same validator used for env). Keep the individual Zod schemas private. Export one `<feature>Schema` object that groups them per route by request segment (`params`/`query`/`body`, the shape `validateRequest` expects), and export the inferred input types for the controller:
 
 ```ts
 import { z } from 'zod'
@@ -528,10 +513,11 @@ router.use('/todos', todoRouter)
 
 Third-party middleware (`cors`, `helmet`, `express-rate-limit`) is configured as plain options in `core/config/options.ts` and applied in `app.ts`. Custom middleware lives in `src/core/http/` (the Express-facing part of `core`; `core/logger` stays framework-agnostic):
 
-| File                | Export                     | Purpose                                                                                                                                                                                                                                                                                            |
-| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `validate.ts`       | `validate(ValidatedShape)` | Parses `params` -> `query` -> `body` with the Zod schema given for each (all optional). On success it replaces that segment with the parsed data. On the first failure it calls `next()` with a `422` `AppError` that joins all issue messages, with `metadata.source` set to the failing segment. |
-| `request-logger.ts` | `requestLogger`            | `morgan` access log routed through the Winston `logger` at `http` level (via morgan's `stream` option), so it follows the same format, transports, and test silencing as every other log line. Visible when `LOG_LEVEL` is `http` or more verbose.                                                 |
+| File                  | Export                   | Purpose                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `validate-request.ts` | `validateRequest(shape)` | Parses `params` -> `query` -> `body` with the Zod schema given for each (all optional). On success it replaces that segment with the parsed data. On the first failure it throws a `422` `AppError` that joins all issue messages, with `metadata.source` set to the failing segment. Only request input becomes a 422 — a `ZodError` anywhere else is a server bug and stays a 500. |
+| `error-handler.ts`    | `errorHandler`           | Global error middleware, registered last in `app.ts`: normalize, log, respond (§4).                                                                                                                                                                                                                                                                                                  |
+| `request-logger.ts`   | `requestLogger`          | `morgan` access log routed through the Winston `logger` at `http` level (via morgan's `stream` option), so it follows the same format, transports, and test silencing as every other log line. Visible when `LOG_LEVEL` is `http` or more verbose.                                                                                                                                   |
 
 Adding more:
 
@@ -567,8 +553,8 @@ only complete once all four stages pass and the router is mounted in `src/routes
 - DO keep services framework/DB-agnostic: depend on the repository port, receive deps via `createXService({ ... })`, pick adapters only in the feature's `index.ts`.
 - DO throw domain errors (`NotFoundError`, `ConflictError`, …) from the business layer; use `HttpStatus`/`AppError` directly only in adapters and `core/`.
 - DO use `createResponse` and the message constants.
-- DO validate input with `validate(<feature>Schema.<action>)` in the route, not `schema.parse()` in the controller.
-- DO wrap DB/SDK calls in `wrapUnexpected`, and register connection cleanup with `onShutdown`.
+- DO validate input with `validateRequest(<feature>Schema.<action>)` in the route, not `schema.parse()` in the controller.
+- DO throw and let `errorHandler` log/respond — no `try/catch` in controllers or middleware; register connection cleanup with `onShutdown`.
 - DO put log-only strings in `LOG`, not `SUCCESS`/`ERRORS` (see §4).
 - DO add new env vars to the Zod schema in `core/config/env.ts` (with a `.default()` unless it's a secret) and to `.env.example`; use `z.coerce.number()` for numeric ones.
 - DON'T import across features, hardcode response strings, throw raw `Error`, use `any`, read `process.env` directly, or use `console.log`.

@@ -189,8 +189,8 @@ The service has a `healthcheck` that calls `GET /health` every 30s, so `docker p
 |- src/
 |  |- core/                   # App infrastructure (not feature-specific)
 |  |  |- config/              # env.ts (load .env + Zod validation) + runtime options (cors/helmet/rate-limit)
-|  |  |- error/               # AppError, domain errors, error logger, error middleware, wrapUnexpected
-|  |  |- http/                # Express middleware (validate, requestLogger)
+|  |  |- error/               # AppError + domain errors
+|  |  |- http/                # Express middleware (validateRequest, requestLogger, errorHandler)
 |  |  |- logger/              # Winston logger setup
 |  |  \- server/              # Server bootstrap + graceful shutdown (onShutdown hooks)
 |  |- features/               # Feature modules (one folder per feature)

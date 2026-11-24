@@ -1,18 +1,15 @@
 import { AppError } from '@/core/error'
-import type { ValidatedShape } from '@/core/http/validate.type'
-import { ErrorSeverity, HttpStatus } from '@/shared/consts'
+import { HttpStatus } from '@/shared/consts'
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
+import type { ZodType } from 'zod'
 
-type RequestSource = 'params' | 'query' | 'body'
-const SOURCES: RequestSource[] = ['params', 'query', 'body']
+const SOURCES = ['params', 'query', 'body'] as const
+type RequestSource = (typeof SOURCES)[number] // 'params' | 'query' | 'body'
+type ValidatedShape = Partial<Record<RequestSource, ZodType>> // { params?: ZodType; query?: ZodType; body?: ZodType }
 
 const readSource = (req: Request, source: RequestSource): unknown => {
-  if (source === 'params') {
-    return req.params
-  }
-  if (source === 'query') {
-    return req.query
-  }
+  if (source === 'params') return req.params
+  if (source === 'query') return req.query
   return req.body
 }
 
@@ -35,26 +32,17 @@ const writeSource = (req: Request, source: RequestSource, data: unknown): void =
   req.body = data
 }
 
-export const validate =
+export const validateRequest =
   (schema: ValidatedShape): RequestHandler =>
   (req: Request, _res: Response, next: NextFunction): void => {
     for (const source of SOURCES) {
       const segmentSchema = schema[source]
-      if (!segmentSchema) {
-        continue
-      }
+      if (!segmentSchema) continue
 
       const result = segmentSchema.safeParse(readSource(req, source))
-
       if (!result.success) {
         const message = result.error.issues.map((issue) => issue.message).join(', ')
-        next(
-          new AppError(message, HttpStatus.UNPROCESSABLE_ENTITY, ErrorSeverity.WARN)
-            .withOperation('validate')
-            .withEndpoint(req)
-            .withMetadata({ source })
-        )
-        return
+        throw new AppError(message, HttpStatus.UNPROCESSABLE_ENTITY, { source })
       }
       writeSource(req, source, result.data)
     }

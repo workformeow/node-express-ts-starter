@@ -1,49 +1,39 @@
-import { ErrorSeverity, HttpStatus } from '@/shared/consts'
-import type { EndpointContext, ErrorContext } from './error.type'
-import type { Request } from 'express'
+import { ERRORS, HttpStatus } from '@/shared/consts'
+
+type Metadata = Record<string, unknown>
 
 export class AppError extends Error {
   constructor(
     message: string,
     public status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR,
-    public severity: ErrorSeverity = ErrorSeverity.ERROR,
-    public context: ErrorContext = {}
+    public metadata?: Metadata,
+    options?: ErrorOptions
   ) {
-    super(message)
-    this.name = this.constructor.name
-    Error.captureStackTrace(this, this.constructor)
+    super(message, options)
+    this.name = new.target.name
   }
+}
 
-  withEndpoint(req: Request): this {
-    const endpoint: EndpointContext = {
-      method: req.method,
-      url: req.originalUrl,
-    }
-
-    if (Object.keys(req.params).length > 0) {
-      endpoint.params = { ...req.params }
-    }
-
-    if (Object.keys(req.query).length > 0) {
-      endpoint.query = { ...req.query }
-    }
-
-    const body = req.body as Record<string, unknown>
-    if (req.body && Object.keys(body).length > 0) {
-      endpoint.body = { ...body }
-    }
-
-    this.context.endpoint = endpoint
-    return this
+export class NotFoundError extends AppError {
+  constructor(resource: string, metadata?: Metadata) {
+    super(ERRORS.notFound(resource), HttpStatus.NOT_FOUND, metadata)
   }
+}
 
-  withOperation(operation: string): this {
-    this.context.operation = operation
-    return this
+export class ConflictError extends AppError {
+  constructor(message: string, metadata?: Metadata) {
+    super(message, HttpStatus.CONFLICT, metadata)
   }
+}
 
-  withMetadata(metadata: Record<string, unknown>): this {
-    this.context.metadata = metadata
-    return this
+export class UnauthorizedError extends AppError {
+  constructor(message: string, metadata?: Metadata) {
+    super(message, HttpStatus.UNAUTHORIZED, metadata)
+  }
+}
+
+export class BusinessRuleError extends AppError {
+  constructor(message: string, metadata?: Metadata) {
+    super(message, HttpStatus.UNPROCESSABLE_ENTITY, metadata)
   }
 }

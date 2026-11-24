@@ -8,21 +8,20 @@ export interface TodoServiceDeps {
 }
 
 export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
-  const getById = async (id: string): Promise<Todo> => {
+  const getById = async (id: string) => {
     const todo = await todoRepo.findById(id)
-    if (!todo) {
-      throw new NotFoundError('Todo', { id }).withOperation('getTodo')
-    }
+    if (!todo) throw new NotFoundError('Todo', { id })
+
     return todo
   }
 
   const list = async (): Promise<Todo[]> => todoRepo.findAll()
 
-  const create = async (data: NewTodo): Promise<Todo> => {
+  const create = async (data: NewTodo) => {
     if (await todoRepo.findByTitle(data.title)) {
       throw new ConflictError(ERRORS.alreadyExists('Todo title'), {
         title: data.title,
-      }).withOperation('createTodo')
+      })
     }
     return todoRepo.create(data)
   }
@@ -30,17 +29,13 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
   const toggle = async (id: string): Promise<Todo> => {
     const todo = await getById(id) // needs the current `done` to flip it
     const updated = await todoRepo.update(id, { done: !todo.done })
-    if (!updated) {
-      // Deleted between the read and the write
-      throw new NotFoundError('Todo', { id }).withOperation('toggleTodo')
-    }
+    if (!updated) throw new NotFoundError('Todo', { id })
+
     return updated
   }
 
-  const remove = async (id: string): Promise<void> => {
-    if (!(await todoRepo.delete(id))) {
-      throw new NotFoundError('Todo', { id }).withOperation('removeTodo')
-    }
+  const remove = async (id: string) => {
+    if (!(await todoRepo.delete(id))) throw new NotFoundError('Todo', { id })
   }
 
   return { list, getById, create, toggle, remove }
