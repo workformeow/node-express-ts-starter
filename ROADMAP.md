@@ -76,11 +76,29 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 เขียนหลัง refactor ทุก phase นิ่งแล้ว เพื่อไม่ต้องแก้ test ซ้ำหลายรอบ
 
-- [ ] เขียนใหม่ + เอา `describe.skip` ออก: `app-error.test.ts`, `error-handler.test.ts`, `validate-request.test.ts`
+ตาม test pyramid: unit เยอะ, integration กลาง, e2e น้อย — ใช้ Vitest + supertest ที่มีอยู่ ไม่เพิ่มเครื่องมือ
+
+**Unit**
+
+- [ ] `app-error.test.ts` — เขียนใหม่ + เอา `describe.skip` ออก
+- [ ] `validate-request.test.ts` — เขียนใหม่ + เอา `describe.skip` ออก
+- [ ] `error-handler.test.ts` — เขียนใหม่ + เอา `describe.skip` ออก
 - [ ] env: export `envSchema`, test defaults (`safeParse({})`) + `z.stringbool()` (`'false'` → `false`)
-- [ ] logger (ถ้าจำเป็น): dev format แสดง meta / stack ถูกต้อง
-- [ ] test ของ phase ที่เพิ่มทีหลัง (schema/validate ใหม่, SQLite adapter ถ้าทำ)
+
+**Integration**
+
+- [ ] `todo.repository.sqlite.test.ts` — adapter กับ `node:sqlite` `:memory:` จริง (SQL, 0/1 → boolean, text → Date, not found → `null`/`false`)
+
+**E2E (smoke)**
+
+- [ ] 1 ไฟล์ผ่าน `createApp()` ทั้งตัว: `/health` + วงจร CRUD ของ todo หนึ่งรอบ
+
+**ปิด phase**
+
 - [ ] `npm run check` ผ่าน โดยไม่มี test ที่ถูก skip ค้าง
+- [ ] ลบหมายเหตุ teaching mode ใน `AGENTS.md`
+
+ยังไม่ทำใน starter: contract test (เทียบ response กับ OpenAPI), load test (k6) — เพิ่มเมื่อโปรเจกต์จริงต้องใช้
 
 ---
 
