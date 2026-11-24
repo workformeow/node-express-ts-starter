@@ -392,7 +392,7 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
     return todoRepo.create(data)
   }
 
-  const remove = async (id: string): Promise<void> => {
+  const remove = async (id: string) => {
     if (!(await todoRepo.delete(id))) {
       throw new NotFoundError('Todo', { id })
     }
@@ -536,9 +536,8 @@ A feature moves through these stages, in order:
 4. Run:
 
 ```bash
-npm run fix        # ESLint --fix + Prettier
-npm run typecheck  # tsc --noEmit (must pass with no errors)
-npm test           # run whenever test files exist for the touched code (see §1 Testing)
+npm run fix    # ESLint --fix + Prettier
+npm run check  # lint + typecheck + test + build (must pass)
 ```
 
 CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck`, and `test` on every PR to `main` and every push to `main`, so a change that skips these locally will fail there.

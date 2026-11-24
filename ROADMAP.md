@@ -57,11 +57,13 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 - [ ] cleanup `AGENTS.md` / `README.md` ทั้งไฟล์ ลบ pattern เก่าที่ไม่ใช้แล้ว
 
-## Phase 7 — Deploy (optional)
+## Phase 7 — Docker
 
-- [ ] รองรับ Vercel: `api/index.ts` (`export default app`) + `vercel.json`
-- [ ] ตรวจ Render / Docker ใช้ได้ด้วย env จาก platform อย่างเดียว (ไม่มี `.env`)
+ไม่ผูกกับ platform ใด (Vercel, Render, …) — config ของ platform ทำแยกตามแต่ละ project ที่นำ starter ไปใช้
+
 - [ ] `docker-compose.yml`: `env_file: .env` + `NODE_ENV: production` (เลิกใช้ `.env.prod`); อัปเดต README ส่วน Docker
+- [ ] `Dockerfile` CMD: เพิ่ม `--enable-source-maps` ให้ตรงกับ `npm start`
+- [ ] ตรวจว่า container รันได้ด้วย env จากภายนอกอย่างเดียว (ไม่มี `.env` ใน image)
 
 ## Phase 8 — SQLite adapter (optional)
 
@@ -84,13 +86,14 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 ## Decisions
 
-| เรื่อง                    | ตัดสินใจ                                                        |
-| ----------------------- | ------------------------------------------------------------- |
-| `.env` ไม่เจอ            | log อย่างเดียว ไม่ exit (platform inject env เอง)                |
-| schema ไม่ผ่าน            | `process.exit(1)`                                             |
-| dotenv                  | ไม่ใช้ — ใช้ `process.loadEnvFile()` ของ Node 22                 |
-| http-errors             | ไม่ใช้ — domain errors เดิมแยก business ออกจาก HTTP status อยู่แล้ว |
-| Logger                  | winston ต่อ แต่ใช้ format สำเร็จรูป                                |
-| `app.ts` / `main.ts`    | แยกไว้ — test และ Vercel ต้อง import app โดยไม่ `listen`         |
-| try/catch ใน controller | ลบ — Express 5 จัดการให้                                        |
-| return type             | ไม่ใส่ `void` / `Promise<void>` — ใส่เฉพาะเมื่อ return ข้อมูล        |
+| เรื่อง                    | ตัดสินใจ                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| `.env` ไม่เจอ            | log อย่างเดียว ไม่ exit (platform inject env เอง)                      |
+| schema ไม่ผ่าน            | `process.exit(1)`                                                   |
+| dotenv                  | ไม่ใช้ — ใช้ `process.loadEnvFile()` ของ Node 22                       |
+| http-errors             | ไม่ใช้ — domain errors เดิมแยก business ออกจาก HTTP status อยู่แล้ว       |
+| Logger                  | winston ต่อ แต่ใช้ format สำเร็จรูป                                      |
+| `app.ts` / `main.ts`    | แยกไว้ — test (และ serverless ในอนาคต) ต้อง import app โดยไม่ `listen` |
+| Deploy platform         | ไม่ผูกกับเจ้าใด — เพิ่ม config ตาม project ที่นำไปใช้                        |
+| try/catch ใน controller | ลบ — Express 5 จัดการให้                                              |
+| return type             | ไม่ใส่ `void` / `Promise<void>` — ใส่เฉพาะเมื่อ return ข้อมูล              |

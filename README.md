@@ -62,8 +62,8 @@ Values are validated with Zod (see `src/core/config/env.ts`). Every non-secret v
 ## Available Scripts
 
 - `npm run dev`: run with `tsx --watch`
-- `npm run build`: clean `dist`, compile TypeScript, then rewrite path aliases (`tsc-alias`)
-- `npm start`: run the compiled build
+- `npm run build`: clean `dist`, compile TypeScript, rewrite path aliases (`tsc-alias`), copy the OpenAPI spec into `dist/`
+- `npm start`: run the compiled build (with source maps, so stack traces point at `.ts` lines)
 - `npm run fix`: auto-fix ESLint issues and format with Prettier
 - `npm run lint`: check with ESLint without changing files
 - `npm run typecheck`: type-check with `tsc --noEmit`
@@ -103,7 +103,7 @@ Folders are split by feature (`src/features/<name>/`). Inside a feature, code is
 ```text
             HTTP adapter                      business layer                 storage adapter
  routes -> controller -> ------------> service -> repository (port) <------- repository.<driver>
- (validate)  (Express)                 (rules, domain errors)                (memory / mysql / mongo / …)
+ (validateRequest) (Express)           (rules, domain errors)                (memory / mysql / mongo / …)
                                   index.ts wires them together and picks the adapter
 ```
 
@@ -177,7 +177,7 @@ The image is a two-stage build on `node:<version>-slim` (Debian/glibc, so native
 - **Build stage** installs all dependencies and compiles TypeScript, so the running container never needs extra memory for `tsc` (useful on small/free plans).
 - **Runtime stage** contains only `dist/` and production dependencies, runs as the non-root `node` user, and starts with `node dist/main.js` directly (not `npm start`), so `SIGTERM` from `docker stop` or a redeploy reaches the app and graceful shutdown runs.
 
-`NODE_ENV=production` is the default. Create `.env.prod` first (copy `.env.example`) — `docker-compose.yml` loads it via `env_file`. It is never copied into the image; on a host like Render, set the variables in the dashboard instead (and point its health check at `/health`).
+`NODE_ENV=production` is the default. Create `.env.prod` first (copy `.env.example`) — `docker-compose.yml` loads it via `env_file`. It is never copied into the image; on a hosting platform, set the variables in its dashboard instead (and point its health check at `/health`).
 
 The service has a `healthcheck` that calls `GET /health` every 30s, so `docker ps` shows `(healthy)` / `(unhealthy)` and other services can wait on it with `depends_on: { nodejs: { condition: service_healthy } }`. Plain Compose only reports the status; it does **not** restart an unhealthy container (Swarm, Kubernetes, or a helper like autoheal does). If you change `PORT` in `.env.prod`, update the URL in the healthcheck too.
 
@@ -213,7 +213,7 @@ The service has a `healthcheck` that calls `GET /health` every 30s, so `docker p
 
 ## Contributing / Adding Features
 
-This project follows a strict, consistent structure. Before adding or changing a feature, read [`AGENTS.md`](./AGENTS.md) for the conventions and the feature-creation recipe (based on `src/features/todo/`). Always run `npm run fix`, `npm run typecheck`, and `npm test` before committing (CI runs the same checks).
+This project follows a strict, consistent structure. Before adding or changing a feature, read [`AGENTS.md`](./AGENTS.md) for the conventions and the feature-creation recipe (based on `src/features/todo/`). Run `npm run fix` and then `npm run check` before committing (CI runs lint, typecheck, and tests).
 
 ## License
 
