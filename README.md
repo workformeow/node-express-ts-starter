@@ -76,7 +76,7 @@ Values are validated with Zod (see `src/core/config/env.ts`). Every non-secret v
 
 - `GET /health`: health check (liveness probe for load balancers, orchestrators, and uptime monitors)
 - `GET /docs`: API documentation page
-- `/todos`: reference CRUD feature (in-memory, data resets on restart)
+- `/todos`: reference CRUD feature (SQLite in memory via Node's built-in `node:sqlite`; data resets on restart)
 
 | Method   | Path                | Success | Errors                               |
 | -------- | ------------------- | ------- | ------------------------------------ |
@@ -103,13 +103,13 @@ Folders are split by feature (`src/features/<name>/`). Inside a feature, code is
 ```text
             HTTP adapter                      business layer                 storage adapter
  routes -> controller -> ------------> service -> repository (port) <------- repository.<driver>
- (validateRequest) (Express)           (rules, domain errors)                (memory / mysql / mongo / …)
+ (validateRequest) (Express)           (rules, domain errors)                (sqlite / memory / pg / …)
                                   index.ts wires them together and picks the adapter
 ```
 
 - **Business layer**: `*.entity.ts`, `*.repository.ts` (interface), `*.service.ts`. Plain TypeScript. Services throw domain errors (`NotFoundError`, `ConflictError`, …) and `core/error` maps them to HTTP status codes.
 - **Adapters**: `*.controller.ts` / `*.routes.ts` / `*.schema.ts` for HTTP, `*.repository.<driver>.ts` for storage.
-- **Composition root**: the feature's `index.ts` is the only place that chooses an adapter. Switching from in-memory to a real database means adding one adapter file and changing one line there.
+- **Composition root**: the feature's `index.ts` is the only place that chooses an adapter. The app uses the SQLite adapter; switching to another database means adding one adapter file and changing one line there.
 - **Enforced by ESLint**: business-layer files can't import `express`, DB clients, `@/core/http`, or `HttpStatus` (see `eslint.config.mjs`).
 
 Because services only depend on an interface, their tests inject an in-memory repository instead of mocking modules.
@@ -192,6 +192,7 @@ The `healthcheck` calls `GET /health` every 30s (on `PORT`), so `docker ps` show
 |- src/
 |  |- core/                   # App infrastructure (not feature-specific)
 |  |  |- config/              # env.ts (load .env + Zod validation) + runtime options (cors/helmet/rate-limit)
+|  |  |- database/            # DB connection (node:sqlite, in memory) + close on shutdown
 |  |  |- error/               # AppError + domain errors
 |  |  |- http/                # Express middleware (validateRequest, requestLogger, errorHandler)
 |  |  |- logger/              # Winston logger setup
@@ -199,7 +200,7 @@ The `healthcheck` calls `GET /health` every 30s (on `PORT`), so `docker ps` show
 |  |- features/               # Feature modules (one folder per feature)
 |  |  |- docs/                # OpenAPI spec + Scalar API reference UI
 |  |  |- health/              # Health check (liveness probe)
-|  |  \- todo/                # Reference feature: entity, repository port + memory adapter, service, schema, controller, routes
+|  |  \- todo/                # Reference feature: entity, repository port + sqlite/memory adapters, service, schema, controller, routes
 |  |- shared/                 # Cross-cutting building blocks
 |  |  |- consts/              # HttpStatus, response messages (SUCCESS/ERRORS)
 |  |  |- types/               # Shared types

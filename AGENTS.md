@@ -20,7 +20,7 @@ Folders are split **by feature**, and each feature is layered **Clean Architectu
 
 Not wired up yet — add inside the existing structure when a consuming project needs it, don't pre-build it speculatively:
 
-- **Database / ORM** — none, and the starter doesn't pick one (SQL or Mongo, Prisma, Sequelize, TypeORM, a raw driver, …). `todo` stores data with an in-memory adapter (`todo.repository.memory.ts`); a real project adds `<feature>.repository.<driver>.ts` and switches to it in the feature's `index.ts` (§2, §6 step 5).
+- **Database / ORM** — the starter ships only Node's built-in `node:sqlite` with an in-memory database (`core/database/sqlite.ts`, `:memory:`, data resets on restart) so `todo` has a real SQL adapter to copy. It doesn't pick a production DB (Postgres, Mongo, Prisma, …); a real project adds `<feature>.repository.<driver>.ts` and switches to it in the feature's `index.ts` (§2, §6 step 5). The `CREATE TABLE IF NOT EXISTS` in the adapter is fine for `:memory:`; a persistent DB needs migrations.
 - **Auth** — none (`req.user`, JWT, sessions, etc. don't exist).
 - **i18n / structured messages** — `AppError`/`createResponse` take a plain `string` message. Do not introduce a `{ key, message, params }` message shape or an i18n layer speculatively; that's a real requirement of specific downstream products, not a default this starter should carry.
 
@@ -53,6 +53,7 @@ When tests are requested, follow this standard so output stays consistent across
 src/
   core/          # Infrastructure, app-wide. Knows nothing about specific features.
     config/      # env.ts (load .env + Zod validation), runtime options (cors/helmet/rate-limit)
+    database/    # DB connection (node:sqlite) + onShutdown close
     error/       # AppError + domain errors (no Express — services import these)
     http/        # Express middleware (validateRequest, requestLogger, errorHandler)
     logger/      # Winston setup (framework-agnostic — no Express)
@@ -84,7 +85,8 @@ features/todo/
   todo.entity.ts             # business  — domain types (plain TS)
   todo.repository.ts         # business  — port: interface the service needs from storage
   todo.service.ts            # business  — rules; createTodoService({ todoRepo })
-  todo.repository.memory.ts  # adapter   — implements the port (in-memory; later .mysql.ts, .mongo.ts, …)
+  todo.repository.sqlite.ts  # adapter   — implements the port with node:sqlite (used by the app)
+  todo.repository.memory.ts  # adapter   — implements the port with a Map (used by service tests)
   todo.schema.ts             # adapter   — Zod input schemas for validateRequest()
   todo.controller.ts         # adapter   — Express handlers; createTodoController(service)
   todo.routes.ts             # adapter   — createTodoRouter(controller)
@@ -181,7 +183,7 @@ startServer(createApp(), env.PORT)
 | Service            | `<feature>.service.ts`             | `todo.service.ts`             |
 | Entity             | `<feature>.entity.ts`              | `todo.entity.ts`              |
 | Repository (port)  | `<feature>.repository.ts`          | `todo.repository.ts`          |
-| Repository adapter | `<feature>.repository.<driver>.ts` | `todo.repository.memory.ts`   |
+| Repository adapter | `<feature>.repository.<driver>.ts` | `todo.repository.sqlite.ts`   |
 | Validation (Zod)   | `<feature>.schema.ts`              | `todo.schema.ts`              |
 | Types              | `<feature>.type.ts`                | `auth.type.ts`                |
 | Middleware         | `<name>.ts`                        | `validate-request.ts`         |
@@ -357,7 +359,7 @@ export interface TodoRepository {
   findByTitle(title: string): Promise<Todo | null>
   create(data: NewTodo): Promise<Todo>
   update(id: string, changes: TodoChanges): Promise<Todo | null>
-  delete(id: string): Promise<boolean>
+  remove(id: string): Promise<boolean>
   // ...
 }
 ```
@@ -393,7 +395,7 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
   }
 
   const remove = async (id: string) => {
-    if (!(await todoRepo.delete(id))) {
+    if (!(await todoRepo.remove(id))) {
       throw new NotFoundError('Todo', { id })
     }
   }
@@ -418,30 +420,40 @@ export type TodoService = ReturnType<typeof createTodoService>
    | Mongoose                 | `findById` -> `null`   | `findByIdAndUpdate(id, x, { new: true })` -> `null` | `deleteOne` -> `deletedCount === 0` |
    | Prisma                   | `findUnique` -> `null` | `update` throws `P2025` (catch it -> `null`)        | `deleteMany` -> `count === 0`       |
 
-   Abridged example with a raw SQL client (the starter itself ships only `.memory.ts`):
+   Abridged from the real `todo.repository.sqlite.ts` (Node's built-in `node:sqlite`, connection in `core/database`):
 
 ```ts
-// todo.repository.mysql.ts (illustrative)
-const toTodo = (row: TodoRow): Todo => ({
+// Row = shape in the DB (done as 0/1, date as text); never leaves this file
+interface TodoRow {
+  id: string
+  title: string
+  done: number
+  createdAt: string
+}
+
+const mapTodo = (row: TodoRow): Todo => ({
   id: row.id,
   title: row.title,
-  done: Boolean(row.done),
-  createdAt: row.created_at,
+  done: row.done === 1,
+  createdAt: new Date(row.createdAt),
 })
 
-export const createMysqlTodoRepository = (pool: Pool): TodoRepository => ({
-  findById: async (id) => {
-    const [rows] = await pool.execute<TodoRow[]>('SELECT * FROM todos WHERE id = ?', [id])
-    return rows[0] ? toTodo(rows[0]) : null
-  },
+export const createSqliteTodoRepository = (db: DatabaseSync): TodoRepository => {
+  const findById = async (id: string): Promise<Todo | null> => {
+    const row = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as TodoRow | undefined
+    return row ? mapTodo(row) : null // driver's undefined -> port's null
+  }
 
-  delete: async (id) => {
-    const [result] = await pool.execute<ResultSetHeader>('DELETE FROM todos WHERE id = ?', [id])
-    return result.affectedRows > 0
-  },
-  // ...
-})
+  const remove = async (id: string): Promise<boolean> => {
+    const result = db.prepare('DELETE FROM todos WHERE id = ?').run(id)
+    return result.changes > 0 // 0 rows -> false
+  }
+
+  return { findById, remove /* , … */ }
+}
 ```
+
+Always bind values with `?` placeholders; never build SQL by string interpolation (SQL injection).
 
 6. **Validation** — `todo.schema.ts` (Zod, the same validator used for env). Keep the individual Zod schemas private. Export one `<feature>Schema` object that groups them per route by request segment (`params`/`query`/`body`, the shape `validateRequest` expects), and export the inferred input types for the controller:
 
@@ -474,12 +486,13 @@ export type TodoIdParams = z.infer<typeof idParams>
 8. **Composition root** — `todo/index.ts`. The only place that picks the adapter and wires the layers. It exports the router (and any types other code may need), never internals:
 
 ```ts
+import { db } from '@/core/database'
 import { createTodoController } from './todo.controller'
-import { createMemoryTodoRepository } from './todo.repository.memory'
+import { createSqliteTodoRepository } from './todo.repository.sqlite'
 import { createTodoRouter } from './todo.routes'
 import { createTodoService } from './todo.service'
 
-const todoRepo = createMemoryTodoRepository() // swap to e.g. createMysqlTodoRepository(pool) later
+const todoRepo = createSqliteTodoRepository(db) // swap to e.g. createPostgresTodoRepository(pool) later
 const todoService = createTodoService({ todoRepo })
 const todoController = createTodoController(todoService)
 

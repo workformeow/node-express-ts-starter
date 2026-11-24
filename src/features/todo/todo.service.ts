@@ -35,7 +35,7 @@ export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
   }
 
   const remove = async (id: string) => {
-    if (!(await todoRepo.delete(id))) throw new NotFoundError('Todo', { id })
+    if (!(await todoRepo.remove(id))) throw new NotFoundError('Todo', { id })
   }
 
   return { list, getById, create, toggle, remove }

@@ -42,7 +42,7 @@ const businessLayerRestrictedPaths = [
       'Business logic must not depend on HTTP. Keep Express in *.controller.ts / *.routes.ts.',
   },
   {
-    name: '@/shared/constants',
+    name: '@/shared/consts',
     importNames: ['HttpStatus'],
     message:
       'Business logic must not pick HTTP status codes. Throw a domain error (NotFoundError, ConflictError, …) from @/core/error.',
@@ -68,6 +68,7 @@ const dbClientGroup = [
   'mysql2',
   'mysql2/**',
   'pg',
+  'node:sqlite',
 ]
 
 const businessLayerRestrictedPatterns = [
@@ -82,7 +83,7 @@ const businessLayerRestrictedPatterns = [
     message: 'HTTP plumbing. Wire it in *.routes.ts, not in business logic.',
   },
   {
-    group: ['@/shared/constants/http-status*'],
+    group: ['@/shared/consts/http-status*'],
     message:
       'Business logic must not pick HTTP status codes. Throw a domain error (NotFoundError, ConflictError, …) from @/core/error.',
   },
@@ -162,7 +163,10 @@ export default defineConfig(
       // ── Node.js runtime ──────────────────────────────────────────────────────
       'n/no-deprecated-api': 'error', // catch use of deprecated Node.js APIs
       'n/no-extraneous-import': 'error', // imports must be declared in package.json
-      'n/no-unsupported-features/node-builtins': ['error', { version: '>=26' }], // match engines.node
+      'n/no-unsupported-features/node-builtins': [
+        'error',
+        { version: '>=26', ignores: ['sqlite'] },
+      ], // match engines.node
 
       // ── TypeScript strictness ───────────────────────────────────────────────
       '@typescript-eslint/no-explicit-any': 'error',

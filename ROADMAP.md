@@ -67,10 +67,10 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 
 ## Phase 8 — SQLite adapter (optional)
 
-- [ ] เพิ่ม `todo.repository.sqlite.ts` ด้วย `node:sqlite` (built-in, ไม่ต้อง install) — ตัวอย่าง adapter ของ driver จริง
-- [ ] map row → entity, แปล "not found" (`changes === 0`) เป็น `null`/`false`
-- [ ] สลับ adapter ใน `todo/index.ts` บรรทัดเดียว; `.memory.ts` เก็บไว้ใช้กับ service test
-- [ ] ตรวจสถานะ stability ของ `node:sqlite` ใน Node 26 ก่อนเริ่ม
+- [x] เพิ่ม `todo.repository.sqlite.ts` ด้วย `node:sqlite` (built-in, ไม่ต้อง install) — ตัวอย่าง adapter ของ driver จริง
+- [x] map row → entity, แปล "not found" (`changes === 0`) เป็น `null`/`false`
+- [x] สลับ adapter ใน `todo/index.ts` บรรทัดเดียว; `.memory.ts` เก็บไว้ใช้กับ service test
+- [x] ตรวจสถานะ stability ของ `node:sqlite` ใน Node 26 ก่อนเริ่ม
 
 ## Phase 9 — Tests
 

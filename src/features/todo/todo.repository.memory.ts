@@ -2,13 +2,10 @@ import { randomUUID } from 'node:crypto'
 import type { Todo } from './todo.entity'
 import type { TodoRepository } from './todo.repository'
 
-// Copies in and out so callers can't mutate stored rows by reference — a real DB never
-// hands out live references either, so this keeps the adapter's behavior honest.
 const clone = (todo: Todo): Todo => ({ ...todo, createdAt: new Date(todo.createdAt) })
 
 export const createMemoryTodoRepository = (seed: Todo[] = []): TodoRepository => {
   const store = new Map(seed.map((todo) => [todo.id, clone(todo)]))
-
   const cloneOrNull = (todo: Todo | undefined): Todo | null => (todo ? clone(todo) : null)
 
   return {
@@ -31,6 +28,6 @@ export const createMemoryTodoRepository = (seed: Todo[] = []): TodoRepository =>
       store.set(id, updated)
       return clone(updated)
     },
-    delete: async (id) => store.delete(id),
+    remove: async (id) => store.delete(id),
   }
 }
