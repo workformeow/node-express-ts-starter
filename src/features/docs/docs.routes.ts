@@ -13,8 +13,8 @@ const scalarConfig: Partial<ApiReferenceConfiguration> = {
   url: '/docs/openapi.json',
   theme: 'default',
   darkMode: true,
-  hideClientButton: true,
-  hideTestRequestButton: true,
+  hideClientButton: false,
+  hideTestRequestButton: false,
   mcp: { disabled: true },
   telemetry: false,
 }

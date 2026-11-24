@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=none
 openapi: 3.1.0
 info:
   title: NodeJS Template API
@@ -5,7 +6,10 @@ info:
   description: API documentation for the Node.js template project
 
 servers:
+  - url: /
+    description: Same origin as this page
   - url: http://localhost:3000
+    description: Local
 
 tags:
   - name: Health
