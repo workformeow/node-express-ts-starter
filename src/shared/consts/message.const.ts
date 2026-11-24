@@ -7,6 +7,7 @@ export const LOG = {
   },
   SERVER: {
     listening: (baseUrl: string) => `Server listening at ${baseUrl}`,
+    shutdown: 'Forced shutdown: server did not close in time',
   },
 }
 

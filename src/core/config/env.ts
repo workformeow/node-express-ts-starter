@@ -33,7 +33,7 @@ const parseEnv = (): Env => {
   return data
 }
 
-const loadEnvFile = (): void => {
+const loadEnvFile = () => {
   if (!existsSync(ENV_FILE)) {
     console.info(LOG.CONFIG.missing(ENV_FILE))
     return

@@ -16,12 +16,7 @@ const toAppError = (error: Error): AppError => {
   return new AppError(ERRORS.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR)
 }
 
-export const errorHandler = (
-  error: Error,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-): void => {
+export const errorHandler = (error: Error, req: Request, res: Response, _next: NextFunction) => {
   const appError = toAppError(error)
   const level = appError.status >= HttpStatus.INTERNAL_SERVER_ERROR ? 'error' : 'warn'
 

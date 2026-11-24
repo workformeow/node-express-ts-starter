@@ -13,12 +13,13 @@ const readSource = (req: Request, source: RequestSource): unknown => {
   return req.body
 }
 
-const writeSource = (req: Request, source: RequestSource, data: unknown): void => {
+const writeSource = (req: Request, source: RequestSource, data: unknown) => {
   if (source === 'params') {
     req.params = data as Request['params']
     return
   }
 
+  // For Express 5: req.query is a read-only getter — redefine it to store the parsed value.
   if (source === 'query') {
     Object.defineProperty(req, 'query', {
       value: data,
@@ -34,7 +35,7 @@ const writeSource = (req: Request, source: RequestSource, data: unknown): void =
 
 export const validateRequest =
   (schema: ValidatedShape): RequestHandler =>
-  (req: Request, _res: Response, next: NextFunction): void => {
+  (req: Request, _res: Response, next: NextFunction) => {
     for (const source of SOURCES) {
       const segmentSchema = schema[source]
       if (!segmentSchema) continue
