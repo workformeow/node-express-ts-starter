@@ -1,3 +1,4 @@
+import { AppError } from '@/core/error'
 import { ERRORS, HttpStatus } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 import { env } from './env'
@@ -10,6 +11,7 @@ export const corsOptions: CorsOptions = {
   credentials: true,
 }
 
+// Scalar (/docs) loads its UI from jsDelivr and boots with an inline script.
 export const helmetOptions: HelmetOptions = {
   contentSecurityPolicy: {
     directives: {
@@ -22,9 +24,10 @@ export const helmetOptions: HelmetOptions = {
 
 export const rateLimitOptions: Partial<RateLimitOptions> = {
   windowMs: 15 * 60 * 1000,
-  max: env.NODE_ENV === AppEnv.PRODUCTION ? 1000 : 10_000,
-  message: ERRORS.TOO_MANY_REQUESTS,
-  statusCode: HttpStatus.TOO_MANY_REQUESTS,
+  limit: env.NODE_ENV === AppEnv.PRODUCTION ? 1000 : 10_000,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (_req, _res, next) => {
+    next(new AppError(ERRORS.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS))
+  },
 }

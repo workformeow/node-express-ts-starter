@@ -1,18 +1,3 @@
-// Log-only strings (console bootstrap + Winston logger), grouped by subsystem — never sent in API responses.
-export const LOG = {
-  CONFIG: {
-    load: (file: string) => `[Config] Loaded environment from: ${file}`,
-    missing: (file: string) => `[Config] No ${file} found, using process environment`,
-    invalid: '[Config] Invalid environment variables:',
-  },
-  SERVER: {
-    listening: (baseUrl: string) => `Server listening at ${baseUrl}`,
-    shutdown: 'Forced shutdown: server did not close in time',
-  },
-}
-
-// API response pools. Flat on purpose: UPPER_CASE = fixed text, camelCase = builder.
-// Feature-specific text goes in `<feature>.const.ts` (e.g. AUTH_MESSAGE), not here.
 export const SUCCESS = {
   OK: 'Operation successful',
 

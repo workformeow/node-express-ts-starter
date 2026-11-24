@@ -1,6 +1,5 @@
 import { env } from '@/core/config'
 import { logger } from '@/core/logger'
-import { LOG } from '@/shared/consts'
 import type { Express } from 'express'
 import type { Server } from 'node:http'
 
@@ -8,7 +7,7 @@ let serverInstance: Server | null = null
 let isShuttingDown = false
 
 export const startServer = (app: Express, port: number) => {
-  serverInstance = app.listen(port, () => logger.info(LOG.SERVER.listening(env.BASE_URL)))
+  serverInstance = app.listen(port, () => logger.info(`Server listening at ${env.BASE_URL}`))
 
   process.on('unhandledRejection', handleFatalError)
   process.on('uncaughtException', handleFatalError)
@@ -38,7 +37,7 @@ const shutdown = async (exitCode = 0) => {
 
   // Hard ceiling so a stuck connection can't block process exit past the orchestrator's grace period.
   const forceExit = setTimeout(() => {
-    logger.error(LOG.SERVER.shutdown)
+    logger.error('Forced shutdown: server did not close in time')
     process.exit(exitCode)
   }, env.SHUTDOWN_TIMEOUT_MS)
   forceExit.unref()

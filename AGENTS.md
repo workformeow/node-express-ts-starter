@@ -170,7 +170,7 @@ startServer(createApp(), env.PORT)
 - Never read `process.env` directly outside `core/config`. Import the validated `env` from `@/core/config`.
 - The `logger` is the plain Winston instance — call `logger.info(message, meta)`; for a level only known at runtime use `logger.log(level, message, meta)`. `meta` is a flat context object (`{ id }`), no secrets.
 - Logger behavior is driven by env only: `LOG_LEVEL` (one level for every transport; the error file is always `error`), `LOG_FILE=true` adds daily JSON files in `logs/` (`YYYY-MM-DD.log` 14d, `YYYY-MM-DD.error.log` 30d), and `NODE_ENV=test` silences everything. Console output is colored text in development and JSON in production.
-- Log-only strings (bootstrap `console.*` lines and Winston `logger` messages, never sent to a client) live in the `LOG` constant (`@/shared/consts`), grouped by subsystem (`LOG.CONFIG`, `LOG.SERVER`), never in `SUCCESS`/`ERRORS` — those two are API-response message pools only. See §4.
+- Log messages (bootstrap `console.*` lines and Winston `logger` messages, never sent to a client) are written inline where they are logged, so the text is visible at the call site and searchable from a log line. `SUCCESS`/`ERRORS` are API-response message pools only. See §4.
 
 ### File naming (kebab-case + role suffix)
 
@@ -194,7 +194,7 @@ Skip files you genuinely don't need. For example, `src/features/health/` only ha
 
 Middleware is the one exception to the role-suffix rule: files under `src/core/http/` skip the `.middleware.ts` suffix — every file in that folder is Express middleware, so the suffix would be redundant. Feature-local middleware, if a feature ever needs its own, follows the same no-suffix rule.
 
-**Messages:** generic, reusable text (CRUD success/fail wording, HTTP-generic errors) belongs in `SUCCESS`/`ERRORS` in `shared/consts/message.const.ts` — extend it, don't duplicate. Both pools are **flat, two levels**: `UPPER_CASE` keys are fixed text (`ERRORS.UNAUTHORIZED`), `camelCase` keys are builders (`SUCCESS.create('todo')`, `ERRORS.notFound('Todo')`). Don't add a nested group to them. A feature keeps its own `<feature>.const.ts` exporting one `<FEATURE>_MESSAGE` object (e.g. `AUTH_MESSAGE.LOGIN` in `auth.const.ts`) for text specific to that feature's domain (e.g. "Invalid email or password") that wouldn't make sense reused elsewhere. That keeps the shared pools flat and the feature's text deleted along with the feature. Default to the shared pools when in doubt. `LOG` is the exception: it keeps a subsystem group (`LOG.CONFIG.load`) because the group says where the line comes from.
+**Messages:** generic, reusable text (CRUD success/fail wording, HTTP-generic errors) belongs in `SUCCESS`/`ERRORS` in `shared/consts/message.const.ts` — extend it, don't duplicate. Both pools are **flat, two levels**: `UPPER_CASE` keys are fixed text (`ERRORS.UNAUTHORIZED`), `camelCase` keys are builders (`SUCCESS.create('todo')`, `ERRORS.notFound('Todo')`). Don't add a nested group to them. A feature keeps its own `<feature>.const.ts` exporting one `<FEATURE>_MESSAGE` object (e.g. `AUTH_MESSAGE.LOGIN` in `auth.const.ts`) for text specific to that feature's domain (e.g. "Invalid email or password") that wouldn't make sense reused elsewhere. That keeps the shared pools flat and the feature's text deleted along with the feature. Default to the shared pools when in doubt.
 
 ### Config (`src/core/config/`)
 
@@ -215,7 +215,7 @@ Import `env` from `@/core/config`. The schema is the single source of truth: the
 ```
 
 - Response messages come from `SUCCESS`/`ERRORS` in `@/shared/consts`, or from a feature-local `<feature>.const.ts` for messages specific to that feature's domain (see §3) — never hardcoded inline strings. These are plain strings — no i18n key/message object (see §1).
-- Log-only strings (startup/config/server logs, never sent to a client) come from the separate `LOG` constant in the same file. Don't mix the two: if it's only ever written to a log (`console.*` or `logger`), it belongs in `LOG`, not `SUCCESS`/`ERRORS`.
+- Log-only text (startup/config/server logs, never sent to a client) is written inline at the log call, not added to `SUCCESS`/`ERRORS` (§3).
 - HTTP codes come from the `HttpStatus` enum, never magic numbers. Only adapters (controller, routes, middleware, `core/`) use it; the business layer can't (§2).
 
 ### Errors
@@ -554,7 +554,7 @@ only complete once all four stages pass and the router is mounted in `src/routes
 - DO use `createResponse` and the message constants.
 - DO validate input with `validateRequest(<feature>Schema.<action>)` in the route, not `schema.parse()` in the controller.
 - DO throw and let `errorHandler` log/respond — no `try/catch` in controllers or middleware; register connection cleanup with `onShutdown`.
-- DO put log-only strings in `LOG`, not `SUCCESS`/`ERRORS` (see §4).
+- DO write log messages inline at the log call; keep `SUCCESS`/`ERRORS` for client-facing text (see §4).
 - DO add new env vars to the Zod schema in `core/config/env.ts` (with a `.default()` unless it's a secret) and to `.env.example`; use `z.coerce.number()` for numeric ones.
 - DON'T import across features, hardcode response strings, throw raw `Error`, use `any`, read `process.env` directly, or use `console.log`.
 - DON'T import Express, a DB client, or `HttpStatus` into `*.service.ts` / `*.entity.ts` / `*.repository.ts`, and don't `eslint-disable` the boundary rule to get around it (§2).

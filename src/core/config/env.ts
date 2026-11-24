@@ -2,10 +2,10 @@
 /* eslint-disable no-console */
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
-import { LOG, LOG_LEVELS } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
 
 const ENV_FILE = '.env'
+const LOG_LEVELS = ['error', 'warn', 'info', 'http', 'verbose', 'debug'] as const
 const splitComma = (value: string): string[] =>
   value
     .split(',')
@@ -26,7 +26,7 @@ type Env = z.infer<typeof envSchema>
 const parseEnv = (): Env => {
   const { success, data, error } = envSchema.safeParse(process.env)
   if (!success) {
-    console.error(LOG.CONFIG.invalid, `\n${z.prettifyError(error)}`)
+    console.error('[Config] Invalid environment variables:', `\n${z.prettifyError(error)}`)
     process.exit(1)
   }
 
@@ -35,12 +35,12 @@ const parseEnv = (): Env => {
 
 const loadEnvFile = () => {
   if (!existsSync(ENV_FILE)) {
-    console.info(LOG.CONFIG.missing(ENV_FILE))
+    console.info(`[Config] No ${ENV_FILE} found, using process environment`)
     return
   }
 
   process.loadEnvFile(ENV_FILE)
-  console.info(LOG.CONFIG.load(ENV_FILE))
+  console.info(`[Config] Loaded environment from: ${ENV_FILE}`)
 }
 
 loadEnvFile()

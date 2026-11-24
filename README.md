@@ -201,7 +201,7 @@ The `healthcheck` calls `GET /health` every 30s (on `PORT`), so `docker ps` show
 |  |  |- health/              # Health check (liveness probe)
 |  |  \- todo/                # Reference feature: entity, repository port + memory adapter, service, schema, controller, routes
 |  |- shared/                 # Cross-cutting building blocks
-|  |  |- consts/              # HttpStatus, log levels, messages (SUCCESS/ERRORS/LOG)
+|  |  |- consts/              # HttpStatus, response messages (SUCCESS/ERRORS)
 |  |  |- types/               # Shared types
 |  |  \- utils/               # Helpers (createResponse)
 |  |- app.ts                  # createApp(): global middleware + routes + error handler
