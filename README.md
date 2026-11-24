@@ -160,26 +160,29 @@ npm run test:watch  # watch mode
 
 ## Docker
 
-The app service is behind the `prod` Compose profile, so a plain `docker compose up` won't start it. That leaves room to add dev-only services (database, mail catcher, …) that start without the app. Run it with:
+The `Dockerfile` is the single source for the image; `docker-compose.yml` just points at it so anyone can try the app with one command:
 
 ```bash
-docker compose --profile prod up -d --build
+docker compose up -d --build   # start (http://localhost:3000)
+docker compose down            # stop
 ```
 
-Stop the container:
+No `.env` is needed — every variable has a default. If `.env` exists, Compose passes it in (except `LOG_FILE`, which Compose pins to `false` because containers log to stdout). The file is never copied into the image.
 
-```bash
-docker compose --profile prod down
-```
+The image defaults to `NODE_ENV=development`, because this setup is local-first: CORS allows every origin, so a frontend on another port works without config, and errors include stack traces.
 
-The image is a two-stage build on `node:<version>-slim` (Debian/glibc, so native modules install without compiling):
+The image is a two-stage build on `node:<version>-slim`:
 
-- **Build stage** installs all dependencies and compiles TypeScript, so the running container never needs extra memory for `tsc` (useful on small/free plans).
-- **Runtime stage** contains only `dist/` and production dependencies, runs as the non-root `node` user, and starts with `node dist/main.js` directly (not `npm start`), so `SIGTERM` from `docker stop` or a redeploy reaches the app and graceful shutdown runs.
+- **Build stage** installs all dependencies and compiles TypeScript.
+- **Run stage** has only `dist/` and production dependencies, runs as the non-root `node` user, and starts with `node --enable-source-maps dist/main.js` directly (not `npm start`), so `SIGTERM` from `docker stop` or a redeploy reaches the app and graceful shutdown runs.
 
-`NODE_ENV=production` is the default. Create `.env.prod` first (copy `.env.example`) — `docker-compose.yml` loads it via `env_file`. It is never copied into the image; on a hosting platform, set the variables in its dashboard instead (and point its health check at `/health`).
+The `healthcheck` calls `GET /health` every 30s (on `PORT`), so `docker ps` shows `(healthy)` / `(unhealthy)` and other services can wait on it with `depends_on: { api: { condition: service_healthy } }`.
 
-The service has a `healthcheck` that calls `GET /health` every 30s, so `docker ps` shows `(healthy)` / `(unhealthy)` and other services can wait on it with `depends_on: { nodejs: { condition: service_healthy } }`. Plain Compose only reports the status; it does **not** restart an unhealthy container (Swarm, Kubernetes, or a helper like autoheal does). If you change `PORT` in `.env.prod`, update the URL in the healthcheck too.
+**Hosting:** any platform that builds from a Dockerfile (e.g. Render) uses this file directly and ignores Compose. Set the variables in its dashboard and point its health check at `/health`. `PORT` is read from the environment, so a platform-assigned port just works.
+
+> **Before deploying, set `NODE_ENV=production` and `CORS_ORIGINS`.** The image's development default would otherwise allow requests from any origin and return stack traces to clients. Leave `LOG_FILE` unset (`false`): the image has no writable `logs/` folder, and the platform collects stdout.
+
+**Monorepo:** a root `docker-compose.yml` can reuse this image with `build: ./apps/api`; for a hot-reloading dev container use `target: build` + `command: npm run dev`.
 
 ## Project Structure
 

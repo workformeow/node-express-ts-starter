@@ -1,9 +1,6 @@
 node_modules
 .git
 .gitignore
-.env.example
-.env
-.env.dev
-.env.prod
+.env*
 dist
 logs
