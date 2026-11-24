@@ -8,244 +8,142 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import { defineConfig } from 'eslint/config'
 
-/** @type {['error', Record<string, unknown>]} */
-const importOrderRule = [
-  'error',
-  {
-    groups: [['builtin', 'external'], 'internal', ['parent', 'sibling', 'index'], 'type'],
-    pathGroups: [
-      // Match the @/* alias defined in tsconfig.json
-      { pattern: '@/**', group: 'internal', position: 'after' },
-    ],
-    pathGroupsExcludedImportTypes: ['builtin'],
-    alphabetize: { order: 'asc', caseInsensitive: true },
-    'newlines-between': 'never',
-  },
-]
+// ── Layer rules (AGENTS.md §2): what each layer may not import ─────────────────
 
-// Shared by every `no-restricted-imports` config below. A later config object REPLACES the rule's
-// options instead of merging them, so each override must re-include this pattern.
-const featureBoundary = {
+const NO_EXPRESS = {
+  name: 'express',
+  message: 'Keep Express in *.controller.ts / *.routes.ts.',
+}
+const NO_HTTP_STATUS = {
+  name: '@/shared/consts',
+  importNames: ['HttpStatus'],
+  message: 'Business logic must not pick HTTP status codes. Throw a domain error instead.',
+}
+const NO_HTTP = {
+  group: ['@/core/http', '@/core/http/*'],
+  message: 'HTTP plumbing belongs in *.routes.ts.',
+}
+// Add your DB driver/ORM here when a project adopts one.
+const NO_DB = {
+  group: ['@/core/database', '@/core/database/*', 'node:sqlite'],
+  message: 'Go through the repository port; only *.repository.<driver>.ts talks to the DB.',
+}
+const NO_FEATURE_INTERNALS = {
   group: ['@/features/*/*'],
-  message:
-    'Import from another feature only via its public API (@/features/<name>), not internal paths.',
+  message: 'Import another feature via its public API (@/features/<name>).',
 }
 
-// Business layer of a feature (entity, repository port, service) must stay framework/DB-agnostic.
-// Adapters live in *.controller.ts / *.routes.ts (HTTP) and *.repository.<driver>.ts (DB).
-const businessLayerFiles = ['src/features/**/*.{service,entity,repository}.ts']
-
-const businessLayerRestrictedPaths = [
-  {
-    name: 'express',
-    message:
-      'Business logic must not depend on HTTP. Keep Express in *.controller.ts / *.routes.ts.',
+/**
+ * (files, ...bans) → a config that bans those imports in those files.
+ * NO_FEATURE_INTERNALS is always included: a later `no-restricted-imports` config replaces
+ * the earlier one instead of merging, so every layer must repeat it.
+ * @param {string[]} files
+ * @param {...Record<string, unknown>} bans
+ * @returns {import('eslint').Linter.Config}
+ */
+const restrictImports = (files, ...bans) => ({
+  files,
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: bans.filter((ban) => 'name' in ban),
+        patterns: [NO_FEATURE_INTERNALS, ...bans.filter((ban) => 'group' in ban)],
+      },
+    ],
   },
-  {
-    name: '@/shared/consts',
-    importNames: ['HttpStatus'],
-    message:
-      'Business logic must not pick HTTP status codes. Throw a domain error (NotFoundError, ConflictError, …) from @/core/error.',
-  },
-]
-
-// Project DB module + common Node DB clients/ORMs. Add your driver here if it's missing.
-const dbClientGroup = [
-  '@/core/database',
-  '@/core/database/**',
-  '@/generated',
-  '@/generated/**',
-  '@prisma/**',
-  'sequelize',
-  'sequelize/**',
-  'typeorm',
-  'typeorm/**',
-  'drizzle-orm',
-  'drizzle-orm/**',
-  'knex',
-  'mongoose',
-  'mongodb',
-  'mysql2',
-  'mysql2/**',
-  'pg',
-  'node:sqlite',
-]
-
-const businessLayerRestrictedPatterns = [
-  featureBoundary,
-  {
-    group: dbClientGroup,
-    message:
-      'Business logic must not depend on the DB. Depend on the repository port (<feature>.repository.ts) and implement it in <feature>.repository.<driver>.ts.',
-  },
-  {
-    group: ['@/core/http', '@/core/http/*'],
-    message: 'HTTP plumbing. Wire it in *.routes.ts, not in business logic.',
-  },
-  {
-    group: ['@/shared/consts/http-status*'],
-    message:
-      'Business logic must not pick HTTP status codes. Throw a domain error (NotFoundError, ConflictError, …) from @/core/error.',
-  },
-]
-
-// Adapters (AGENTS.md §2): each side talks to its own outside world only.
-// Storage adapter (*.repository.<driver>.ts) never touches HTTP.
-const storageAdapterFiles = ['src/features/**/*.repository.*.ts']
-const storageAdapterRestrictedPaths = [
-  {
-    name: 'express',
-    message:
-      'A repository adapter talks to storage only. Keep Express in *.controller.ts / *.routes.ts.',
-  },
-]
-
-// HTTP adapter (controller / routes / schema) never touches the DB; it goes through the service.
-const httpAdapterFiles = ['src/features/**/*.{controller,routes,schema}.ts']
-const httpAdapterRestrictedPatterns = [
-  featureBoundary,
-  {
-    group: dbClientGroup,
-    message:
-      'The HTTP layer must not reach the DB directly. Call the service, which uses the repository port.',
-  },
-]
+})
 
 export default defineConfig(
-  // ── Ignores ───────────────────────────────────────────────────────────────
-  {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.turbo/**', 'eslint.config.mjs'],
-  },
+  { ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'eslint.config.mjs'] },
 
-  // ── TypeScript (Node.js / Express backend) ──────────────────────────────────
   {
-    files: ['src/**/*.{js,mjs,cjs,ts}'],
+    files: ['src/**/*.ts'],
     extends: [
       eslint.configs.recommended,
-      tseslint.configs.recommended,
-      tseslint.configs.recommendedTypeChecked, // type-aware rules for stricter linting
-      prettier, // MUST be last: turns off ESLint rules that conflict with Prettier
+      tseslint.configs.recommendedTypeChecked,
+      prettier, // last: turns off rules that fight Prettier
     ],
     languageOptions: {
       globals: globals.node,
-      parserOptions: {
-        // Type-aware linting via the TypeScript project service (recommended over `project`)
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
-    plugins: {
-      import: importPlugin,
-      'unused-imports': unusedImports,
-      n,
-    },
+    plugins: { import: importPlugin, 'unused-imports': unusedImports, n },
     rules: {
-      // ═══════════════════════════════════════════════════════════════════════
-      // Baseline — safety & correctness. Keep enabled in every project cloned
-      // from this template; only relax with a documented reason.
-      // ═══════════════════════════════════════════════════════════════════════
-
-      // ── Safety & error handling ──────────────────────────────────────────────
-      'no-async-promise-executor': 'error', // unsafe Promise executor functions
-      'no-eval': 'error', // disallow eval()
-      eqeqeq: 'error', // require === / !== over == / !=
-      'no-var': 'error', // block-scoped declarations only
-      'prefer-const': 'error', // catch accidental reassignment
-      curly: ['error', 'multi-line'], // always require braces around blocks
-      '@typescript-eslint/no-floating-promises': 'error', // every Promise must be awaited/handled
-      '@typescript-eslint/no-misused-promises': 'error', // catch async fns passed where sync is expected
-      '@typescript-eslint/only-throw-error': 'error', // always throw Error instances (type-aware version of no-throw-literal)
+      // Correctness
+      eqeqeq: 'error',
+      curly: ['error', 'multi-line'],
+      'no-eval': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': [
         'error',
-        { considerDefaultExhaustiveForUnions: true }, // a `default` catch-all counts as exhaustive
+        { considerDefaultExhaustiveForUnions: true },
       ],
+      '@typescript-eslint/no-non-null-assertion': 'warn',
+      '@typescript-eslint/no-unnecessary-condition': 'warn',
+      '@typescript-eslint/promise-function-async': 'warn',
+      '@typescript-eslint/require-await': 'off',
+      complexity: ['warn', { max: 15 }],
 
-      // ── Node.js runtime ──────────────────────────────────────────────────────
-      'n/no-deprecated-api': 'error', // catch use of deprecated Node.js APIs
-      'n/no-extraneous-import': 'error', // imports must be declared in package.json
+      // Node — node:sqlite still flagged experimental by the plugin, but works on Node 26
+      'n/no-deprecated-api': 'error',
+      'n/no-extraneous-import': 'error',
       'n/no-unsupported-features/node-builtins': [
         'error',
         { version: '>=26', ignores: ['sqlite'] },
-      ], // match engines.node
+      ],
 
-      // ── TypeScript strictness ───────────────────────────────────────────────
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-non-null-assertion': 'warn', // prefer explicit narrowing over `!`
-      '@typescript-eslint/no-unnecessary-condition': 'warn', // catch dead branches from bad type narrowing
-      '@typescript-eslint/promise-function-async': 'warn', // functions returning a Promise should be async
-      // Auto-rewrite type-only imports to `import type` on --fix / save
+      // Logging & env — use the winston logger and the validated `env` (core/config)
+      'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-process-env': 'warn',
+
+      // Imports
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
       ],
-      '@typescript-eslint/no-unused-vars': 'off', // delegated to unused-imports below
-
-      // ── Imports ──────────────────────────────────────────────────────────────
-      'unused-imports/no-unused-imports': 'error', // auto-remove unused imports on --fix
-      'import/no-duplicates': 'error',
-      // Auto-import merges types inline (`{ foo, type Bar }`); force them onto a separate `import type` line
       'import/consistent-type-specifier-style': ['error', 'prefer-top-level'],
-      'import/no-cycle': 'warn', // circular deps between feature/core modules
-      // Same-folder imports use `./foo`; anything crossing a folder boundary must use the `@/` alias
-      'import/no-relative-parent-imports': 'error',
-      // Cross-feature imports go through a feature's public `index.ts`, never its internals
-      'no-restricted-imports': ['error', { patterns: [featureBoundary] }],
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // Opinionated — sensible defaults for this template, safe to tune per project.
-      // ═══════════════════════════════════════════════════════════════════════
-
-      // ── Logging & environment ────────────────────────────────────────────────
-      'no-console': ['error', { allow: ['warn', 'error'] }], // prefer the winston logger
-      'no-process-env': 'warn', // read env through the central config module
-
-      // ── Complexity (relaxed for Express handlers) ────────────────────────────
-      complexity: ['warn', { max: 15 }],
-
-      '@typescript-eslint/explicit-module-boundary-types': 'off', // implicit return types are fine for handlers
-      '@typescript-eslint/require-await': 'off', // async middleware without await is common
+      'import/no-duplicates': 'error',
+      'import/no-cycle': 'warn',
+      'import/no-relative-parent-imports': 'error', // `../x` → use the `@/` alias
+      'import/order': [
+        'error',
+        {
+          groups: [['builtin', 'external'], 'internal', ['parent', 'sibling', 'index'], 'type'],
+          pathGroups: [{ pattern: '@/**', group: 'internal', position: 'after' }],
+          pathGroupsExcludedImportTypes: ['builtin'],
+          alphabetize: { order: 'asc', caseInsensitive: true },
+          'newlines-between': 'never',
+        },
+      ],
+      '@typescript-eslint/no-unused-vars': 'off', // handled by unused-imports (auto-fixable)
+      'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
         'warn',
-        { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' },
+        { varsIgnorePattern: '^_', argsIgnorePattern: '^_' },
       ],
-      'import/order': importOrderRule,
+      'no-restricted-imports': ['error', { patterns: [NO_FEATURE_INTERNALS] }],
     },
   },
 
-  // ── Clean Architecture: feature business layer (entity / repository port / service) ──
-  // No Express, no DB client, no HTTP status codes. Applies to type-only imports too.
+  // Clean Architecture layers
+  restrictImports(
+    ['src/features/**/*.{service,entity,repository}.ts'],
+    NO_EXPRESS,
+    NO_HTTP_STATUS,
+    NO_HTTP,
+    NO_DB
+  ),
+  restrictImports(['src/features/**/*.repository.*.ts'], NO_EXPRESS),
+  restrictImports(['src/features/**/*.{controller,routes,schema}.ts'], NO_DB),
+
+  // env.ts loads env and logs before the logger exists
   {
-    files: businessLayerFiles,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        { paths: businessLayerRestrictedPaths, patterns: businessLayerRestrictedPatterns },
-      ],
-    },
+    files: ['src/core/config/env.ts'],
+    rules: { 'no-console': 'off', 'no-process-env': 'off' },
   },
 
-  // ── Clean Architecture: storage adapter (*.repository.<driver>.ts) — no Express ──
   {
-    files: storageAdapterFiles,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        { paths: storageAdapterRestrictedPaths, patterns: [featureBoundary] },
-      ],
-    },
-  },
-
-  // ── Clean Architecture: HTTP adapter (controller / routes / schema) — no DB client ──
-  {
-    files: httpAdapterFiles,
-    rules: {
-      'no-restricted-imports': ['error', { patterns: httpAdapterRestrictedPatterns }],
-    },
-  },
-
-  // ── Tests (relaxed for mocks/fixtures) ──────────────────────────────────────
-  {
-    files: ['**/*.test.ts', '**/*.spec.ts'],
+    files: ['**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',

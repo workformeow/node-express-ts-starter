@@ -9,6 +9,6 @@
   },
   "files.eol": "\n",
   "files.insertFinalNewline": true,
-  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "js/ts.preferences.importModuleSpecifier": "shortest",
   "js/ts.tsdk.path": "node_modules/typescript/lib"
 }

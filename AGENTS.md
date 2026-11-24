@@ -101,7 +101,7 @@ features/todo/
 | `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validateRequest`, the service type      | DB clients                                                                                  |
 | `index.ts`                                      | everything in the feature                                       | —                                                                                           |
 
-The "Must NOT import" column is **enforced by ESLint** (`no-restricted-imports` overrides in `eslint.config.mjs`): the business layer (`*.{service,entity,repository}.ts`), storage adapters (`*.repository.*.ts`, no Express), and the HTTP layer (`*.{controller,routes,schema}.ts`, no DB client). If lint flags an import, move the code to the right layer. Don't disable the rule. The DB-client list there covers common Node drivers/ORMs; if a project uses one that isn't listed, add it.
+The "Must NOT import" column is **enforced by ESLint** (`no-restricted-imports` overrides in `eslint.config.mjs`): the business layer (`*.{service,entity,repository}.ts`), storage adapters (`*.repository.*.ts`, no Express), and the HTTP layer (`*.{controller,routes,schema}.ts`, no DB client). If lint flags an import, move the code to the right layer. Don't disable the rule. Each layer is one `restrictImports(files, ...bans)` line there. The `NO_DB` list only names what the starter uses (`@/core/database`, `node:sqlite`); add your driver/ORM to it when a project adopts one.
 
 Rules of thumb:
 

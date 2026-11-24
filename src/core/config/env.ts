@@ -1,5 +1,3 @@
-/* eslint-disable no-process-env */
-/* eslint-disable no-console */
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { AppEnv } from '@/shared/types'
