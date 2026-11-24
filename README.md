@@ -1,223 +1,116 @@
 # Node Starter (Express + TypeScript)
 
-A production-ready template for building REST APIs with Node.js, Express, and TypeScript. It ships with a feature-based structure that uses Clean Architecture inside each feature, structured logging, centralized error handling, rate limiting, and ready-to-use OpenAPI documentation.
+A REST API starter with a feature-based structure (Clean Architecture inside each feature), validated env, structured logging, one error handler, and OpenAPI docs.
 
-> Building a new feature with an AI assistant? Read [`AGENTS.md`](./AGENTS.md) first — it documents the conventions and provides a step-by-step recipe for adding features consistently.
+**Stack:** Node.js 26 (ESM) · Express 5 · TypeScript 6 · Zod · Winston · SQLite (`node:sqlite`, in memory) · Vitest · ESLint + Prettier · Scalar · Docker
 
-## Tech Stack
-
-- Node.js (ESM)
-- Express 5
-- TypeScript 6
-- Zod (environment + request validation)
-- Winston + winston-daily-rotate-file (logging)
-- ESLint 10 + Prettier
-- Scalar API Reference (OpenAPI docs UI)
-- Docker / Docker Compose
-
-## Requirements
-
-- Node.js >= 26 (see `.nvmrc`)
-- npm >= 10
-- Docker (optional)
+> Working with an AI assistant? It should read [`AGENTS.md`](./AGENTS.md) first — the conventions and the recipe for adding a feature.
 
 ## Getting Started
 
-1. Install dependencies
+Requires Node.js >= 26 (see `.nvmrc`).
 
 ```bash
 npm install
+cp .env.example .env   # optional — every variable has a default
+npm run dev            # http://localhost:3000  ·  docs at /docs
 ```
-
-2. Create the environment file (optional — every variable has a default)
-
-```bash
-cp .env.example .env
-```
-
-3. Start the development server
-
-```bash
-npm run dev
-```
-
-The server starts at http://localhost:3000
 
 ## Environment Variables
 
-At startup the app loads `.env` from the project root with `process.loadEnvFile()`. If there is no `.env` (e.g. on a host that injects variables itself), it logs that and uses `process.env` as is. Variables already set in the environment are never overridden by the file.
+Loaded from `.env` if present (`process.loadEnvFile()`), never overriding variables already set, then validated with Zod (`src/core/config/env.ts`). An invalid value stops the app with a readable error.
 
-Values are validated with Zod (see `src/core/config/env.ts`). Every non-secret variable has a default; the process exits with a readable error if a value is invalid.
+| Variable              | Default                 | Notes                                                     |
+| --------------------- | ----------------------- | --------------------------------------------------------- |
+| `PORT`                | `3000`                  |                                                           |
+| `NODE_ENV`            | `development`           | `development`, `production`, or `test` (silences logs)    |
+| `BASE_URL`            | `http://localhost:3000` | Shown in the startup log                                  |
+| `CORS_ORIGINS`        | (empty)                 | Production only (development allows all). Comma-separated |
+| `LOG_LEVEL`           | `info`                  | `error` `warn` `info` `http` `verbose` `debug`            |
+| `LOG_FILE`            | `false`                 | `true` also writes daily JSON files to `logs/`            |
+| `SHUTDOWN_TIMEOUT_MS` | `10000`                 | Max time for graceful shutdown                            |
 
-| Variable              | Default                 | Notes                                                                  |
-| --------------------- | ----------------------- | ---------------------------------------------------------------------- |
-| `PORT`                | `3000`                  |                                                                        |
-| `NODE_ENV`            | `development`           | `development`, `production`, or `test` (`test` silences all logging)   |
-| `BASE_URL`            | `http://localhost:3000` | Shown in the startup log                                               |
-| `CORS_ORIGINS`        | (empty)                 | Production only — development allows all origins. Comma-separated      |
-| `LOG_LEVEL`           | `info`                  | `error`, `warn`, `info`, `http`, `verbose`, `debug`                    |
-| `LOG_FILE`            | `false`                 | `true` also writes JSON log files to `logs/` (see [Logging](#logging)) |
-| `SHUTDOWN_TIMEOUT_MS` | `10000`                 | Max time for graceful shutdown before forcing exit                     |
+## Scripts
 
-## Available Scripts
+**Run**
 
-- `npm run dev`: run with `tsx --watch`
-- `npm run build`: clean `dist`, compile TypeScript, rewrite path aliases (`tsc-alias`), copy the OpenAPI spec into `dist/`
-- `npm start`: run the compiled build (with source maps, so stack traces point at `.ts` lines)
+- `npm run dev`: run from source with `tsx --watch` (reloads on save)
+- `npm start`: run the compiled build (source maps on, so stacks point at `.ts` lines)
+
+**Build**
+
+- `npm run build`: `clean`, compile TypeScript, rewrite path aliases (`tsc-alias`), then `copy-assets`
+- `npm run clean`: remove `dist/`
+- `npm run copy-assets`: copy the OpenAPI spec into `dist/` (`tsc` only emits `.js`)
+
+**Quality**
+
+- `npm run lint`: check with ESLint
 - `npm run fix`: auto-fix ESLint issues and format with Prettier
-- `npm run lint`: check with ESLint without changing files
-- `npm run typecheck`: type-check with `tsc --noEmit`
-- `npm run clean`: remove the `dist` directory
-- `npm test`: run the test suite once (Vitest)
-- `npm run test:watch`: run the test suite in watch mode
-- `npm run check`: lint + typecheck + test + build in one go
+- `npm run typecheck`: `tsc --noEmit`
+- `npm test` / `npm run test:watch`: Vitest, once / in watch mode
 
-## API Endpoints
+**All at once**
 
-- `GET /health`: health check (liveness probe for load balancers, orchestrators, and uptime monitors)
-- `GET /docs`: API documentation page
-- `/todos`: reference CRUD feature (SQLite in memory via Node's built-in `node:sqlite`; data resets on restart)
+- `npm run check`: lint + typecheck + test + build — run before committing (CI runs the same checks on PRs and pushes to `main`)
 
-| Method   | Path                | Success | Errors                               |
-| -------- | ------------------- | ------- | ------------------------------------ |
-| `GET`    | `/todos`            | 200     | —                                    |
-| `POST`   | `/todos`            | 201     | 409 duplicate title, 422 blank title |
-| `GET`    | `/todos/:id`        | 200     | 404 not found, 422 id is not a UUID  |
-| `PATCH`  | `/todos/:id/toggle` | 200     | 404 not found, 422 id is not a UUID  |
-| `DELETE` | `/todos/:id`        | 200     | 404 not found, 422 id is not a UUID  |
+## API
 
-The standard response envelope is:
+| Method   | Path                | Success | Errors                    |
+| -------- | ------------------- | ------- | ------------------------- |
+| `GET`    | `/health`           | 200     | —                         |
+| `GET`    | `/todos`            | 200     | —                         |
+| `POST`   | `/todos`            | 201     | 409 duplicate, 422 blank  |
+| `GET`    | `/todos/:id`        | 200     | 404, 422 id is not a UUID |
+| `PATCH`  | `/todos/:id/toggle` | 200     | 404, 422 id is not a UUID |
+| `DELETE` | `/todos/:id`        | 200     | 404, 422 id is not a UUID |
 
-```json
-{
-  "message": "...",
-  "timestamp": "ISO-8601",
-  "data": {}
-}
-```
+Every response is `{ "message": "...", "timestamp": "ISO-8601", "data": … }`. Todos live in an in-memory SQLite DB and reset on restart.
+
+**Docs:** `GET /docs` (Scalar UI, can send test requests) and `GET /docs/openapi.json`. The spec lives in `src/features/docs/spec/` (`openapi.yaml` + `paths/` + `components/`); import the JSON into Postman to get a collection.
 
 ## Architecture
 
-Folders are split by feature (`src/features/<name>/`). Inside a feature, code is layered so business logic never depends on Express, the database, or HTTP status codes:
-
 ```text
-            HTTP adapter                      business layer                 storage adapter
- routes -> controller -> ------------> service -> repository (port) <------- repository.<driver>
- (validateRequest) (Express)           (rules, domain errors)                (sqlite / memory / pg / …)
-                                  index.ts wires them together and picks the adapter
+ routes → controller ──→ service → repository (port) ←── repository.<driver>
+ (validateRequest)       (rules, domain errors)          (sqlite / memory / …)
+                 index.ts wires them and picks the adapter
 ```
 
-- **Business layer**: `*.entity.ts`, `*.repository.ts` (interface), `*.service.ts`. Plain TypeScript. Services throw domain errors (`NotFoundError`, `ConflictError`, …) and `core/error` maps them to HTTP status codes.
-- **Adapters**: `*.controller.ts` / `*.routes.ts` / `*.schema.ts` for HTTP, `*.repository.<driver>.ts` for storage.
-- **Composition root**: the feature's `index.ts` is the only place that chooses an adapter. The app uses the SQLite adapter; switching to another database means adding one adapter file and changing one line there.
-- **Enforced by ESLint**: business-layer files can't import `express`, DB clients, `@/core/http`, or `HttpStatus` (see `eslint.config.mjs`).
-
-Because services only depend on an interface, their tests inject an in-memory repository instead of mocking modules.
-
-`src/features/todo/` is the reference implementation. See [`AGENTS.md`](./AGENTS.md) §2 and §6 for the full rules and the step-by-step recipe.
-
-## API Documentation
-
-Served by the `docs` feature (`src/features/docs/`) using [Scalar](https://github.com/scalar/scalar) as the UI, with the OpenAPI spec bundled at runtime (`@apidevtools/swagger-parser`):
-
-- UI: `GET /docs`
-- Bundled OpenAPI JSON: `GET /docs/openapi.json`
-- Spec entry point: `src/features/docs/spec/openapi.yaml`
-- Schemas: `src/features/docs/spec/components/models`
-- Responses: `src/features/docs/spec/components/responses`
-- Paths: `src/features/docs/spec/paths`
-
-Open the docs in the browser at:
-
-http://localhost:3000/docs
+- The service depends only on the repository **interface**, so swapping the DB is one new adapter file plus one line in the feature's `index.ts`, and service tests inject an in-memory repo instead of mocking.
+- ESLint enforces the layers: business files can't import Express, a DB client, `@/core/http`, or `HttpStatus`.
+- `src/features/todo/` is the reference feature. Full rules and the recipe: [`AGENTS.md`](./AGENTS.md).
 
 ## Logging
 
-Winston, with built-in formats only:
-
-- **Console** — colored, human-readable lines in development; JSON in production (for the platform's log collector).
-- **Files** (only when `LOG_FILE="true"`) — JSON, rotated daily in `logs/`:
-  - `YYYY-MM-DD.log` — everything at or above `LOG_LEVEL`, kept 14 days
-  - `YYYY-MM-DD.error.log` — errors only, kept 30 days
-- **HTTP access log** — `morgan` lines go through the same logger at `http` level; set `LOG_LEVEL="http"` to see them.
-- `NODE_ENV=test` silences all logging, so test runs stay quiet and create no `logs/` folder.
-
-## Continuous Integration
-
-`.github/workflows/ci.yml` runs on every pull request to `main` and every push to `main`: `npm ci` -> `npm run lint` -> `npm run typecheck` -> `npm test`. Run `npm run check` locally before opening a PR.
-
-## Testing
-
-Tests run on [Vitest](https://vitest.dev/) and live next to the code they cover as `<name>.test.ts` (e.g. `src/core/error/app-error.test.ts`), mirroring the `src/` layout — no separate `test/` folder.
-
-- Service tests inject a fresh in-memory repository per test, with no `vi.mock` (see `src/features/todo/todo.service.test.ts`).
-- HTTP tests use supertest against an isolated app per test (see `src/features/todo/todo.controller.test.ts`).
-
-```bash
-npm test          # run once
-npm run test:watch  # watch mode
-```
+Winston: colored lines in development, JSON in production. `LOG_FILE=true` adds `logs/YYYY-MM-DD.log` (14 days) and `YYYY-MM-DD.error.log` (30 days). Request lines (morgan) log at `http` level — set `LOG_LEVEL=http` to see them.
 
 ## Docker
 
-The `Dockerfile` is the single source for the image; `docker-compose.yml` just points at it so anyone can try the app with one command:
-
 ```bash
-docker compose up -d --build   # start (http://localhost:3000)
-docker compose down            # stop
+docker compose up -d --build   # http://localhost:3000
+docker compose down
 ```
 
-No `.env` is needed — every variable has a default. If `.env` exists, Compose passes it in (except `LOG_FILE`, which Compose pins to `false` because containers log to stdout). The file is never copied into the image.
+- Two-stage image: build stage compiles TS; run stage has only `dist/` + production deps and runs as the non-root `node` user.
+- No `.env` needed. If one exists Compose passes it in, except `LOG_FILE`, which stays `false` (containers log to stdout).
+- The image defaults to `NODE_ENV=development` for local use (open CORS, stack traces in errors).
+- `healthcheck` hits `/health`, so other services can `depends_on: { api: { condition: service_healthy } }`.
+- Platforms that build from a Dockerfile (e.g. Render) use it directly and ignore Compose; `PORT` comes from the environment.
 
-The image defaults to `NODE_ENV=development`, because this setup is local-first: CORS allows every origin, so a frontend on another port works without config, and errors include stack traces.
-
-The image is a two-stage build on `node:<version>-slim`:
-
-- **Build stage** installs all dependencies and compiles TypeScript.
-- **Run stage** has only `dist/` and production dependencies, runs as the non-root `node` user, and starts with `node --enable-source-maps dist/main.js` directly (not `npm start`), so `SIGTERM` from `docker stop` or a redeploy reaches the app and graceful shutdown runs.
-
-The `healthcheck` calls `GET /health` every 30s (on `PORT`), so `docker ps` shows `(healthy)` / `(unhealthy)` and other services can wait on it with `depends_on: { api: { condition: service_healthy } }`.
-
-**Hosting:** any platform that builds from a Dockerfile (e.g. Render) uses this file directly and ignores Compose. Set the variables in its dashboard and point its health check at `/health`. `PORT` is read from the environment, so a platform-assigned port just works.
-
-> **Before deploying, set `NODE_ENV=production` and `CORS_ORIGINS`.** The image's development default would otherwise allow requests from any origin and return stack traces to clients. Leave `LOG_FILE` unset (`false`): the image has no writable `logs/` folder, and the platform collects stdout.
-
-**Monorepo:** a root `docker-compose.yml` can reuse this image with `build: ./apps/api`; for a hot-reloading dev container use `target: build` + `command: npm run dev`.
+> **Before deploying, set `NODE_ENV=production` and `CORS_ORIGINS`.** Otherwise any origin can call the API and clients see stack traces.
 
 ## Project Structure
 
 ```text
-.
-|- .github/workflows/ci.yml  # CI on PRs + pushes to main: lint, typecheck, test
-|- src/
-|  |- core/                   # App infrastructure (not feature-specific)
-|  |  |- config/              # env.ts (load .env + Zod validation) + runtime options (cors/helmet/rate-limit)
-|  |  |- database/            # DB connection (node:sqlite, in memory) + close on shutdown
-|  |  |- error/               # AppError + domain errors
-|  |  |- http/                # Express middleware (validateRequest, requestLogger, errorHandler)
-|  |  |- logger/              # Winston logger setup
-|  |  \- server/              # Server bootstrap + graceful shutdown (onShutdown hooks)
-|  |- features/               # Feature modules (one folder per feature)
-|  |  |- docs/                # OpenAPI spec + Scalar API reference UI
-|  |  |- health/              # Health check (liveness probe)
-|  |  \- todo/                # Reference feature: entity, repository port + sqlite/memory adapters, service, schema, controller, routes
-|  |- shared/                 # Cross-cutting building blocks
-|  |  |- consts/              # HttpStatus, response messages (SUCCESS/ERRORS)
-|  |  |- types/               # Shared types
-|  |  \- utils/               # Helpers (createResponse)
-|  |- app.ts                  # createApp(): global middleware + routes + error handler
-|  |- main.ts                 # App entry point (startServer + onShutdown registrations)
-|  \- routes.ts               # Root router (mounts every feature router)
-|- docker-compose.yml
-|- Dockerfile
-|- eslint.config.mjs
-|- package.json
-\- tsconfig.json
+src/
+  core/         config · database · error · http (middleware) · logger · server
+  features/     docs · health · todo (reference)
+  shared/       consts · types · utils
+  app.ts        createApp(): middleware + routes + error handler
+  main.ts       entry point: startServer
+  routes.ts     mounts every feature router
 ```
-
-## Contributing / Adding Features
-
-This project follows a strict, consistent structure. Before adding or changing a feature, read [`AGENTS.md`](./AGENTS.md) for the conventions and the feature-creation recipe (based on `src/features/todo/`). Run `npm run fix` and then `npm run check` before committing (CI runs lint, typecheck, and tests).
 
 ## License
 

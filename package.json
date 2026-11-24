@@ -4,17 +4,17 @@
   "description": "A modern Node.js Starter with Express, TypeScript, and ESM",
   "type": "module",
   "scripts": {
-    "start": "node --enable-source-maps dist/main.js",
     "dev": "tsx --watch src/main.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node --enable-source-maps dist/main.js",
+    "build": "npm run clean && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && npm run copy-assets",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "copy-assets": "node -e \"require('node:fs').cpSync('src/features/docs/spec','dist/features/docs/spec',{recursive:true})\"",
     "lint": "eslint .",
     "fix": "eslint . --fix && prettier --write .",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && npm run copy-assets",
-    "copy-assets": "node -e \"require('node:fs').cpSync('src/features/docs/spec','dist/features/docs/spec',{recursive:true})\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "nodejs",

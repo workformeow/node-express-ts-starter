@@ -1,8 +1,6 @@
 # AGENTS.md
 
-Guidance for AI assistants (and humans) working in this repository. Read this **before** creating or modifying a feature so changes stay consistent without re-reading the whole codebase every time.
-
-If anything here conflicts with the actual code, the code wins — update this file in the same change.
+Rules for AI assistants (and humans) working in this repo. The code is the source of truth: this file states the rules and the _why_ the code can't show, and points at real files for examples. If the two disagree, fix this file in the same change.
 
 > **⚠️ Active refactor — teaching mode (highest priority).** A refactor is in progress, tracked in
 > `ROADMAP.md`. Its goal is for the developer to **learn**, not to get changes made fast. **Do not
@@ -10,610 +8,124 @@ If anything here conflicts with the actual code, the code wins — update this f
 > propose an approach with short examples, let the developer write it, then review. Work one
 > phase / one item at a time. Remove this note when the roadmap is finished.
 
----
+## 1. Project
 
-## 1. What this project is
+REST API starter: **Node.js 26 (ESM) + Express 5 + TypeScript 6**, Zod (env + request validation), Winston (logging). Feature folders, each layered Clean Architecture style. `src/features/todo/` is the reference feature — copy its shape.
 
-A feature-based REST API **starter**: **Node.js (ESM) + Express 5 + TypeScript 6**. Environment is validated with Zod, logging uses Winston, and errors flow through a single error handler. It ships as a clean base for new projects to build on top of.
+- **Ships:** an in-memory SQLite DB via Node's built-in `node:sqlite` (`core/database`), so `todo` has a real SQL adapter to copy. Data resets on restart; `CREATE TABLE IF NOT EXISTS` is fine for `:memory:`, a persistent DB needs migrations.
+- **Doesn't ship (add only when a real feature needs it):** a production DB/ORM, auth, i18n message keys. `AppError`/`createResponse` take plain strings.
 
-Folders are split **by feature**, and each feature is layered **Clean Architecture style**. Business logic (entity, repository port, service) never depends on Express, the DB, or HTTP status codes, and ESLint enforces this (§2). `src/features/todo/` is the reference implementation. Copy its shape for new features.
-
-Not wired up yet — add inside the existing structure when a consuming project needs it, don't pre-build it speculatively:
-
-- **Database / ORM** — the starter ships only Node's built-in `node:sqlite` with an in-memory database (`core/database/sqlite.ts`, `:memory:`, data resets on restart) so `todo` has a real SQL adapter to copy. It doesn't pick a production DB (Postgres, Mongo, Prisma, …); a real project adds `<feature>.repository.<driver>.ts` and switches to it in the feature's `index.ts` (§2, §6 step 5). The `CREATE TABLE IF NOT EXISTS` in the adapter is fine for `:memory:`; a persistent DB needs migrations.
-- **Auth** — none (`req.user`, JWT, sessions, etc. don't exist).
-- **i18n / structured messages** — `AppError`/`createResponse` take a plain `string` message. Do not introduce a `{ key, message, params }` message shape or an i18n layer speculatively; that's a real requirement of specific downstream products, not a default this starter should carry.
-
-### Testing
-
-Test runner: **Vitest** (`npm test` / `npm run test:watch`, config in `vitest.config.ts`).
-
-**Do not write tests while building or changing a feature. Write tests only when the developer explicitly asks for them** — e.g. "add tests for X". Don't infer this from context (a feature "looking done" is not a request). Writing tests against code the developer hasn't asked to lock down yet means rewriting them on every behavior change, which costs more tokens than writing them once, on request, against settled code.
-
-When tests are requested, follow this standard so output stays consistent across the codebase:
-
-- **Placement & naming** — `<name>.test.ts` beside the file under test (e.g. `error-handler.ts` -> `error-handler.test.ts`), mirroring the production layering. No separate `test/` or `__tests__/` folder.
-- **Structure** — one `describe` per exported function/class; one `it` per behavior. Name `it` blocks after the observable outcome ("returns undefined when stack has no frames"), not implementation steps or generic labels ("test 1", "works").
-- **Mocking** —
-  - Keep `vi.fn()` mocks as local typed variables and assert against those variables directly; don't read a mock back off a property whose declared type comes from an external interface (e.g. Express's `Response`) — that trips `@typescript-eslint/unbound-method` because the rule checks the declared type, not the runtime value.
-  - When partially mocking a module, use `vi.mock(path, async (importOriginal) => ({ ...await importOriginal<typeof X>(), overriddenExport: ... }))`, typing `X` via a top-level `import type * as X from 'path'` — never an inline `typeof import('path')` (banned by lint).
-  - Don't type a `next` mock as Express's `NextFunction` (`vi.fn<NextFunction>()`) — it's an overloaded call signature (`(err?: any): void` and `(deferToNext: 'router'): void`), and `vi.fn<T>` doesn't handle overloads cleanly. Type it as the single signature you actually use, e.g. `vi.fn<(err?: unknown) => void>()`.
-  - **Services:** don't mock. Inject a fresh in-memory repository per test (`createTodoService({ todoRepo: createMemoryTodoRepository(seed) })`). There's no `vi.mock`, and no test depends on how the DB is queried. See `todo.service.test.ts`.
-  - **HTTP layer:** don't use the shared `createApp()` for a feature whose `index.ts` holds state (the composition root keeps one repository for the whole process, so data would leak between tests). Build an isolated app per test with `express()` + `express.json()` + the feature router wired to a fresh repo + `errorHandler`. See `buildApp` in `todo.controller.test.ts`.
-  - For a module that computes a value once at import time from `env` (e.g. a module-scope constant like `const isProduction = env.NODE_ENV === AppEnv.PRODUCTION`), a normal `vi.mock` on `@/core/config` can't flip that value per test — the constant is already baked in by the time any test runs. Instead, re-import the module fresh per scenario: `vi.resetModules()` + `vi.doMock('@/core/config', () => ({ env: {...} }))` + `await import('./the-module')`, called from a small helper so each test controls the `env` it loads against.
-- **Assertions** — prefer `toEqual`/`toMatchObject` for object shape, `toBe` for primitives. Avoid loosely-typed matchers like `expect.any(Array)` where they trigger `@typescript-eslint/no-unsafe-assignment`; assert the field(s) individually instead.
-- **Coverage priority** — cover branches, edge cases, and any bug uncovered while writing the test (document it with a test rather than silently fixing it, unless asked to fix). Skip near-zero-risk one-liners (trivial wrappers, pure re-exports) unless asked.
-- **Lint/type clean** — test files follow the same rules as production code (§3): no `any`, unused params prefixed `_`, etc. `npm run fix` and `npm run typecheck` must both pass.
-- **Quiet runs** — `vitest.config.ts` sets `NODE_ENV=test`, which makes the logger silent (no console noise) and `LOG_FILE` stays `false` (no `logs/` folder). Don't assert on log output via real transports; mock `@/core/logger` if a test needs to check what was logged.
-- Run `npm test` before calling a change done whenever test files were touched (see §8).
-
-## 2. Architecture & layering
+## 2. Layout
 
 ```
 src/
-  core/          # Infrastructure, app-wide. Knows nothing about specific features.
-    config/      # env.ts (load .env + Zod validation), runtime options (cors/helmet/rate-limit)
-    database/    # DB connection (node:sqlite) + onShutdown close
-    error/       # AppError + domain errors (no Express — services import these)
-    http/        # Express middleware (validateRequest, requestLogger, errorHandler)
-    logger/      # Winston setup (framework-agnostic — no Express)
-    server/      # bootstrap + graceful shutdown (onShutdown hooks)
-  features/      # Business features. One folder per feature. May import core + shared.
-  shared/        # Pure building blocks (consts, types, utils). No feature/business logic.
-  app.ts         # createApp(): global middleware + routes + errorHandler
-  main.ts        # Entry point: startServer (+ onShutdown registrations)
-  routes.ts      # Root router: mounts every feature router
+  core/        # app-wide infrastructure, knows no feature
+    config/    #   env.ts (load .env + Zod), options.ts (cors/helmet/rate-limit)
+    database/  #   node:sqlite connection, closed on shutdown
+    error/     #   AppError + domain errors (no Express — services import these)
+    http/      #   Express middleware: validateRequest, requestLogger, errorHandler
+    logger/    #   Winston (no Express)
+    server/    #   startServer + graceful shutdown (onShutdown)
+  features/    # one folder per feature
+  shared/      # pure building blocks: consts, types, utils (no imports from core/features)
+  app.ts       # createApp(): middleware + routes + errorHandler (no listen — tests import it)
+  main.ts      # startServer(createApp(), env.PORT)
+  routes.ts    # mounts every feature router
 ```
 
-Dependency direction (never break this):
-
-```
-features  ->  core  ->  shared
-features  ->  shared
-```
-
-- `shared/` must not import from `core/` or `features/`.
-- `core/` must not import from `features/`.
-- Features must not import from other features. If two features need the same logic, lift it into `core/` or `shared/`.
-
-### Inside a feature (Clean Architecture)
-
-Each feature splits into a **business layer** that knows nothing about the outside world, and **adapters** that connect it to HTTP and storage. Reference: `src/features/todo/`.
-
-```
-features/todo/
-  todo.entity.ts             # business  — domain types (plain TS)
-  todo.repository.ts         # business  — port: interface the service needs from storage
-  todo.service.ts            # business  — rules; createTodoService({ todoRepo })
-  todo.repository.sqlite.ts  # adapter   — implements the port with node:sqlite (used by the app)
-  todo.repository.memory.ts  # adapter   — implements the port with a Map (used by service tests)
-  todo.schema.ts             # adapter   — Zod input schemas for validateRequest()
-  todo.controller.ts         # adapter   — Express handlers; createTodoController(service)
-  todo.routes.ts             # adapter   — createTodoRouter(controller)
-  index.ts                   # composition root — picks the adapter, wires everything, exports todoRouter
-```
-
-| File                                            | May import                                                      | Must NOT import                                                                             |
-| ----------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `*.entity.ts`, `*.repository.ts` (port)         | other business files of the same feature, `@/shared`            | `express`, DB clients, `@/core/http`, `HttpStatus`                                          |
-| `*.service.ts`                                  | entity, port, `@/core/error` (domain errors), `@/shared/consts` | `express`, DB clients (`@/core/database`, ORM/driver packages), `@/core/http`, `HttpStatus` |
-| `*.repository.<driver>.ts` (adapter)            | entity, port, DB client, `AppError`                             | `express`                                                                                   |
-| `*.schema.ts`, `*.controller.ts`, `*.routes.ts` | Express, `HttpStatus`, `validateRequest`, the service type      | DB clients                                                                                  |
-| `index.ts`                                      | everything in the feature                                       | —                                                                                           |
-
-The "Must NOT import" column is **enforced by ESLint** (`no-restricted-imports` overrides in `eslint.config.mjs`): the business layer (`*.{service,entity,repository}.ts`), storage adapters (`*.repository.*.ts`, no Express), and the HTTP layer (`*.{controller,routes,schema}.ts`, no DB client). If lint flags an import, move the code to the right layer. Don't disable the rule. Each layer is one `restrictImports(files, ...bans)` line there. The `NO_DB` list only names what the starter uses (`@/core/database`, `node:sqlite`); add your driver/ORM to it when a project adopts one.
-
-Rules of thumb:
-
-- The service receives its dependencies as an object (`createXService({ xRepo })`) and never imports an adapter. Only `index.ts` decides which adapter is used. Swapping storage (memory -> any DB) touches `index.ts` and adds one adapter file, nothing else.
-- Repository ports speak domain types (`Todo`, `NewTodo`), never ORM/driver types. The adapter maps rows/documents to entities, so a field like `password` can be dropped there.
-- Ports never throw for a missing record. Reads and updates return `null`, deletes return `false`. The adapter translates however its driver signals "not found" (a `null` result, an affected-row count of 0, a driver error code). The **service** is the only place that decides whether that is an error (`NotFoundError`). Keeping it in the port's return type makes the compiler force both sides to handle it.
-- Use factory functions with a deps object, not classes, so the style stays consistent with the rest of the codebase.
-- Naming: a factory is `create<Feature><Role>` (`createTodoService`, `createTodoController`), the instance it returns is `<feature><Role>` (`todoService`, `todoController`), and CRUD methods are single verbs (`create`, `getById`, `remove`). Factory and instance need different names, so keep the `create` prefix. Factories are only called in `index.ts` and tests. Everywhere else code works with the instance (`todoController.create`), the same way a module-style feature uses `countryController.update`.
-
-### Graceful shutdown
-
-On `SIGTERM`/`SIGINT` or a fatal error, `core/server` closes the HTTP server and runs every registered cleanup at the same time, all under `SHUTDOWN_TIMEOUT_MS`. Anything that holds a connection (DB pool, queue, cache client) registers its own cleanup where it is created. Don't import it into `core/server`, because that would make core depend on a specific driver:
-
-```ts
-// main.ts
-import { onShutdown, startServer } from '@/core/server'
-
-await connectDatabase()
-onShutdown(disconnectDatabase) // () => Promise<void>; rejections are logged, never block exit
-startServer(createApp(), env.PORT)
-```
-
-## 3. Hard conventions (do not deviate)
+Imports flow one way: `features → core → shared`. Features never import each other's internals (only `@/features/<name>`).
 
-### Imports & module system
-
-- ESM only. Use the `@/` path alias for anything under `src/` (configured in `tsconfig.json`). Use relative imports only for files inside the same feature/folder.
-- Import groups are enforced by ESLint (`import/order`, alphabetized, **no blank lines between groups**), in this order:
-  1. builtin + external (e.g. `node:path`, `express`)
-  2. internal `@/...`, including `import type` from `@/...` (the `@/**` path group wins over the type group)
-  3. relative `./...`
-  4. `type` imports from external packages and relative files (always last)
-- When unsure, run `npm run fix` and let `--fix` reorder.
-- Type-only imports must use `import type { ... }` (auto-fixed on save / `npm run fix`).
-
-### Formatting (Prettier)
-
-- 2-space indent, single quotes, **no semicolons**, trailing commas `es5`, print width 100, arrow parens always, LF line endings.
-
-### TypeScript
-
-- `strict` is on, plus `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`.
-- `any` is banned (`@typescript-eslint/no-explicit-any`). Use `unknown` + narrowing.
-- Prefix intentionally unused params with `_` (e.g. `_req`, `_next`).
-- Every Promise must be awaited or handled (`no-floating-promises`).
-- Return types: omit them when the function returns nothing (`void` / `Promise<void>` — handlers, middleware); inference is enough and the signature stays short. Write them when the function returns data others depend on (services, repository ports, utils), so a mistake like a forgotten `null` check fails where it happens instead of leaking `Todo | null` to the caller.
-- Single-line guard clauses may skip braces (`if (!x) return`, `curly: multi-line`); a body on its own line always gets braces.
+### Inside a feature
 
-#### `null` vs `undefined`
+| File                        | Role                                                       | Must NOT import                          |
+| --------------------------- | ---------------------------------------------------------- | ---------------------------------------- |
+| `todo.entity.ts`            | domain types (`Todo`, `NewTodo`, `TodoChanges`)            | Express, DB, `@/core/http`, `HttpStatus` |
+| `todo.repository.ts`        | **port**: interface the service needs from storage         | same                                     |
+| `todo.service.ts`           | business rules, throws domain errors                       | same                                     |
+| `todo.repository.sqlite.ts` | **adapter** used by the app (SQL lives only here)          | Express                                  |
+| `todo.repository.memory.ts` | adapter for service tests (a `Map`)                        | Express                                  |
+| `todo.schema.ts`            | Zod schemas grouped per route by `params`/`query`/`body`   | DB                                       |
+| `todo.controller.ts`        | Express handlers                                           | DB                                       |
+| `todo.routes.ts`            | router: `validateRequest(...)` then the handler            | DB                                       |
+| `index.ts`                  | composition root: picks the adapter, wires, exports router | —                                        |
 
-- Prefer `null` for a value _we_ deliberately return to mean "intentionally absent" in our own
-  domain logic — e.g. a lookup that found nothing, matching how most DB clients/ORMs already
-  return `null` for nullable columns and missing records (`User | null`).
-- Keep `undefined` for optional parameters/properties (`foo?: string`) — that's the language's own
-  idiom; don't fight it by requiring callers to pass `null` explicitly.
-- Keep `undefined` for values sourced from an external dependency/runtime API that already returns
-  `undefined` (`process.env.X`, `Array.prototype.find`, etc.) — don't convert at the boundary.
-- Keep `undefined` anywhere the logging or response layer treats it as a deliberate **elision**
-  sentinel — don't "fix" these. `JSON.stringify` (used by the JSON log format and by every
-  response body) drops `undefined` object fields but serializes `null` explicitly (see
-  `error-handler.ts`'s dev-only `data` field). Swapping one of these to `null` isn't a no-op —
-  a field that was cleanly omitted from a log line or response body would start showing up as an
-  explicit `null`.
+The "Must NOT import" column is lint-enforced: one `restrictImports(files, ...bans)` line per layer in `eslint.config.mjs`. Don't `eslint-disable` it; move the code. `NO_DB` lists only what the starter uses — add your driver/ORM there when a project adopts one.
 
-### Logging & env
+- **Ports** speak domain types only and never throw for "not found": reads/updates return `null`, `remove` returns `false`. The adapter translates the driver's signal (`undefined` row, `changes === 0`, …); only the **service** decides it's a `NotFoundError`.
+- **Adapters** map rows to entities (e.g. SQLite `done` 0/1 → boolean, text → `Date`) and keep the row type private. Bind values with `?`, never interpolate SQL.
+- **Factories, not classes.** `create<Feature><Role>(deps)` returns `<feature><Role>`: `createTodoService({ todoRepo })` → `todoService`. Called only in `index.ts` and tests. Methods are single verbs (`list`, `getById`, `create`, `toggle`, `remove`); use `remove`, since `delete` is a reserved word.
+- A feature with no rules or storage (`health`) is just routes + a plain-function controller.
 
-- Never use `console.*` for app logging — use the Winston `logger` from `@/core/logger` (`console.info`/`warn`/`error` are only tolerated inside `core/config/env.ts`, for bootstrap messages that run before the logger/env are ready).
-- Never read `process.env` directly outside `core/config`. Import the validated `env` from `@/core/config`.
-- The `logger` is the plain Winston instance — call `logger.info(message, meta)`; for a level only known at runtime use `logger.log(level, message, meta)`. `meta` is a flat context object (`{ id }`), no secrets.
-- Logger behavior is driven by env only: `LOG_LEVEL` (one level for every transport; the error file is always `error`), `LOG_FILE=true` adds daily JSON files in `logs/` (`YYYY-MM-DD.log` 14d, `YYYY-MM-DD.error.log` 30d), and `NODE_ENV=test` silences everything. Console output is colored text in development and JSON in production.
-- Log messages (bootstrap `console.*` lines and Winston `logger` messages, never sent to a client) are written inline where they are logged, so the text is visible at the call site and searchable from a log line. `SUCCESS`/`ERRORS` are API-response message pools only. See §4.
+## 3. Conventions
 
-### File naming (kebab-case + role suffix)
+**Imports** — ESM. `./x` only within the same folder; anything else uses the `@/` alias (`import/no-relative-parent-imports`). Order and `import type` are enforced and auto-fixed by `npm run fix`.
 
-| Role               | Pattern                            | Example                       |
-| ------------------ | ---------------------------------- | ----------------------------- |
-| Routes             | `<feature>.routes.ts`              | `todo.routes.ts`              |
-| Controller         | `<feature>.controller.ts`          | `todo.controller.ts`          |
-| Service            | `<feature>.service.ts`             | `todo.service.ts`             |
-| Entity             | `<feature>.entity.ts`              | `todo.entity.ts`              |
-| Repository (port)  | `<feature>.repository.ts`          | `todo.repository.ts`          |
-| Repository adapter | `<feature>.repository.<driver>.ts` | `todo.repository.sqlite.ts`   |
-| Validation (Zod)   | `<feature>.schema.ts`              | `todo.schema.ts`              |
-| Types              | `<feature>.type.ts`                | `auth.type.ts`                |
-| Middleware         | `<name>.ts`                        | `validate-request.ts`         |
-| Constants          | `<name>.const.ts`                  | `message.const.ts`            |
-| Barrel / wiring    | `index.ts`                         | composition root + public API |
+**Formatting** — Prettier: 2 spaces, single quotes, no semicolons, width 100, LF.
 
-Skip files you genuinely don't need. For example, `src/features/health/` only has `health.routes.ts` + `health.controller.ts`: there's no business logic, so no entity/repository/service, and nothing to validate. A feature that has business rules or storage gets the full layering (§2). Keep the naming when you do add a file.
+**TypeScript**
 
-`<feature>.entity.ts` holds domain types the business layer works with. `<feature>.type.ts` is for anything else (e.g. response `data` shapes that differ from an entity, like `LoginData`).
+- `strict`; no `any` (use `unknown` + narrowing); unused params start with `_`; every Promise awaited or `void`-ed on purpose.
+- Return types: omit for `void`/`Promise<void>` (handlers, middleware). Write them on functions returning data others rely on (services, ports, adapters) so a missed `null` check fails where it happens.
+- `async` only when the body `await`s. Single-line guard clauses may skip braces (`if (!x) return`).
+- `null` = "deliberately absent" in our own returns (`Todo | null`). `undefined` = optional params/props and values from runtime APIs. Don't swap them in logs or responses: `JSON.stringify` drops `undefined` but prints `null`.
 
-Middleware is the one exception to the role-suffix rule: files under `src/core/http/` skip the `.middleware.ts` suffix — every file in that folder is Express middleware, so the suffix would be redundant. Feature-local middleware, if a feature ever needs its own, follows the same no-suffix rule.
+**Env** (`core/config/env.ts`) — one Zod schema is the source of truth (`Env = z.infer`). Every non-secret var has a `.default()`, so no `.env` is needed. Numbers: `z.coerce.number()` with bounds; booleans: `z.stringbool()`. New var → schema + `.env.example`. Never read `process.env` outside `core/config`.
 
-**Messages:** generic, reusable text (CRUD success/fail wording, HTTP-generic errors) belongs in `SUCCESS`/`ERRORS` in `shared/consts/message.const.ts` — extend it, don't duplicate. Both pools are **flat, two levels**: `UPPER_CASE` keys are fixed text (`ERRORS.UNAUTHORIZED`), `camelCase` keys are builders (`SUCCESS.create('todo')`, `ERRORS.notFound('Todo')`). Don't add a nested group to them. A feature keeps its own `<feature>.const.ts` exporting one `<FEATURE>_MESSAGE` object (e.g. `AUTH_MESSAGE.LOGIN` in `auth.const.ts`) for text specific to that feature's domain (e.g. "Invalid email or password") that wouldn't make sense reused elsewhere. That keeps the shared pools flat and the feature's text deleted along with the feature. Default to the shared pools when in doubt.
+**Logging** — use `logger` from `@/core/logger` (plain Winston): `logger.info(message, meta)`, or `logger.log(level, …)` for a runtime level. `meta` is a flat object (`{ id }`), no secrets. Write log text inline at the call. `console.*` only in `env.ts` (runs before the logger). Behavior comes from env: `LOG_LEVEL`, `LOG_FILE` (daily JSON files), `NODE_ENV=test` (silent).
 
-### Config (`src/core/config/`)
+**Messages** — client-facing text comes from `SUCCESS`/`ERRORS` (`@/shared/consts`, flat: `UPPER_CASE` fixed text, `camelCase` builders) or a feature's `<FEATURE>_MESSAGE` in `<feature>.const.ts`. Never inline in responses.
 
-| File         | Responsibility                                                                                                                            |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `env.ts`     | Loads `.env` via `process.loadEnvFile()` (logs and continues if missing), validates with the Zod schema, exports `env` (exits on invalid) |
-| `options.ts` | Env-dependent middleware options (cors/helmet/rate-limit)                                                                                 |
-| `index.ts`   | Barrel — import `env` and options from here                                                                                               |
+**HTTP status** — `HttpStatus` enum, never magic numbers, and never in the business layer.
 
-Import `env` from `@/core/config`. The schema is the single source of truth: the `Env` type is `z.infer` of it, so there is no hand-written type to keep in sync. Every non-secret variable gets a `.default()` so copying `.env.example` (or no `.env` at all) just works; note Zod 4 does not validate default values, so a default must already be the parsed type. Numeric env vars use `z.coerce.number()` (not `.transform(Number)`, which silently lets `NaN` through) with explicit bounds (`.int().positive()`, `.max(...)` where a natural ceiling exists). Booleans use `z.stringbool()`. Add env-dependent middleware options to `options.ts`, not `shared/`.
+**File names** — kebab-case + role suffix (table in §2). `<feature>.type.ts` holds shapes that aren't entities (e.g. a `LoginData` response). Middleware in `core/http/` has no `.middleware` suffix.
 
-## 4. The response & error contract
+## 4. Errors and responses
 
-**Every** success response is built with `createResponse` (`@/shared/utils`) so the envelope stays uniform:
+Every success response: `createResponse(message, data?)` → `{ message, timestamp, data? }`. Controllers go `data` → `response` → `res.status(...).json(response)`, one step per line, with `data` typed (`Todo`, `Todo[]`, or `<Feature><Action>Data`). Strip secrets before assigning `data`.
 
-```ts
-{ message: string, timestamp: string, data?: T }
-```
+All errors live in `core/error/app-error.ts`: `new AppError(message, status = 500, metadata?, { cause }?)`.
 
-- Response messages come from `SUCCESS`/`ERRORS` in `@/shared/consts`, or from a feature-local `<feature>.const.ts` for messages specific to that feature's domain (see §3) — never hardcoded inline strings. These are plain strings — no i18n key/message object (see §1).
-- Log-only text (startup/config/server logs, never sent to a client) is written inline at the log call, not added to `SUCCESS`/`ERRORS` (§3).
-- HTTP codes come from the `HttpStatus` enum, never magic numbers. Only adapters (controller, routes, middleware, `core/`) use it; the business layer can't (§2).
+| Throw in the **service**                | When                            | Status |
+| --------------------------------------- | ------------------------------- | ------ |
+| `NotFoundError(resource, metadata?)`    | referenced record doesn't exist | 404    |
+| `ConflictError(message, metadata?)`     | duplicate / state conflict      | 409    |
+| `UnauthorizedError(message, metadata?)` | bad credentials / token         | 401    |
+| `BusinessRuleError(message, metadata?)` | well-formed input breaks a rule | 422    |
 
-### Errors
+Need another? Add a subclass in `app-error.ts`. Outside the business layer, `throw new AppError(msg, HttpStatus.X, metadata)` directly.
 
-Everything lives in `core/error/app-error.ts`:
+**Just throw.** Express 5 forwards sync throws and rejected promises, so no `try/catch`/`next(err)` in controllers or middleware. Use `try/catch` only to _do_ something with an error (e.g. rethrow with `{ cause }`).
 
-```ts
-new AppError(message, status?, metadata?, options?)
-// status: HttpStatus (default 500) · metadata: flat context, e.g. { id } · options: native { cause }
-```
+`errorHandler` (`core/http/error-handler.ts`, last in `app.ts`) is the single place that:
 
-- **In the business layer, throw a domain error.** It says _what_ went wrong; the class picks the HTTP status, so services never import `HttpStatus`:
+1. **Normalizes** to `AppError`: passes `AppError` through, malformed JSON → 400, anything else → 500 with a generic message (raw driver messages never reach clients).
+2. **Logs** `warn` (< 500) or `error` (≥ 500) with the original message, `metadata`, `status`, `method`, `url`, `stack`.
+3. **Responds**; development adds `{ name, metadata, stack }` as `data`.
 
-  | Error                                   | Use when                                       | Status |
-  | --------------------------------------- | ---------------------------------------------- | ------ |
-  | `NotFoundError(resource, metadata?)`    | a referenced record doesn't exist              | 404    |
-  | `ConflictError(message, metadata?)`     | uniqueness / state conflict (duplicate title…) | 409    |
-  | `UnauthorizedError(message, metadata?)` | credentials/token invalid                      | 401    |
-  | `BusinessRuleError(message, metadata?)` | input is well-formed but breaks a domain rule  | 422    |
+It must keep 4 params (`error, req, res, _next`) — Express spots error middleware by arity.
 
-  ```ts
-  throw new NotFoundError('Todo', { id })
-  throw new ConflictError(ERRORS.alreadyExists('Todo title'), { title })
-  ```
+**Validation** — routes run `validateRequest(<feature>Schema.<action>)` first; it parses and replaces `params`/`query`/`body`, or throws a 422 with `metadata.source`. Only request input becomes 422; a `ZodError` elsewhere is a server bug (500). Controllers type `req` with the schema's `z.infer` types.
 
-  If none fits, add a subclass in `app-error.ts` (same three-line shape) rather than reaching for `HttpStatus` in a service.
+## 5. Adding a feature
 
-- **Outside the business layer** (middleware, `core/`, a controller-only feature like `health`), `throw new AppError(message, HttpStatus.X, metadata)` directly.
-- **`metadata` is a flat context object** (`{ id }`, `{ source }`), not `{ metadata: { id } }`. It goes into the log line, and into the response body in development only. No secrets.
-- **Just throw.** Express 5 forwards both sync throws and rejected promises to the error handler, so controllers and middleware have no `try/catch` and never call `next(error)`.
+Copy `src/features/todo/` and rename, working inside out:
 
-### `errorHandler` (`core/http/error-handler.ts`, wired last in `app.ts`)
+1. `entity` → 2. `repository` (port) → 3. `service` → 4. `repository.<driver>` (adapter) → 5. `schema` → 6. `controller` + `routes` → 7. `index.ts` (wire, export the router) → 8. mount in `src/routes.ts`.
 
-The one place that turns any thrown value into a log line and a response:
+Then: messages in `SUCCESS`/`ERRORS` or `<feature>.const.ts`; connections register cleanup with `onShutdown` where they're created. After manual testing (Postman or `/docs`), add the OpenAPI path under `src/features/docs/spec/paths/<feature>/` and reference it from `openapi.yaml` (`npm run build` copies `spec/` into `dist/`).
 
-1. **Normalize** to an `AppError`: an `AppError` passes through; a malformed JSON body (`SyntaxError` with `.type === 'entity.parse.failed'` from `express.json()`) becomes `400 ERRORS.INVALID_JSON_BODY`; anything else becomes `500 ERRORS.INTERNAL_SERVER_ERROR`. Follow the same approach for any other non-`AppError` exception with a well-known client-facing meaning.
-2. **Log** at `error` for status >= 500, otherwise `warn`, with the **original** message plus `metadata`, `status`, `method`, `url`, and `stack`. Request context is added here, so nobody throwing an error needs to pass `req`.
-3. **Respond** with the normalized (client-safe) message. Development adds `{ name, metadata, stack }` as `data`; production sends message + timestamp only. A raw driver/`TypeError` message never reaches the client.
+## 6. Testing (Vitest)
 
-It must keep all four parameters (`error, req, res, _next`) — Express recognizes error middleware by arity.
+- **Write tests only when the developer asks.** A feature "looking done" is not a request.
+- `<name>.test.ts` next to the file. One `describe` per export, one `it` per behavior, named by outcome.
+- **Services:** no mocks — inject a fresh memory repo per test (`createTodoService({ todoRepo: createMemoryTodoRepository(seed) })`). See `todo.service.test.ts`.
+- **HTTP:** build an isolated app per test (`express()` + `express.json()` + router on a fresh repo + `errorHandler`), not the shared `createApp()`. See `buildApp` in `todo.controller.test.ts`.
+- Assert against constants (`SUCCESS.OK`), not copied strings. Cast `res.body` once to `AppResponse<T>`. Avoid `expect.any(...)` (trips `no-unsafe-assignment`).
+- Mocks: keep `vi.fn()` in typed local variables; type `next` as `vi.fn<(err?: unknown) => void>()`, not `NextFunction`. For values computed from `env` at import time, use `vi.resetModules()` + `vi.doMock('@/core/config', …)` + dynamic `import()`.
+- `NODE_ENV=test` keeps the logger silent; mock `@/core/logger` to assert on logs.
 
-**Unexpected errors from a DB/SDK need no wrapper.** Let them propagate: the handler hides their message from the client and logs it with a stack trace that points at the failing repository call. If a specific call needs extra log context, catch it there and rethrow with the native `cause`:
+## 7. Done, commits, git
 
-```ts
-throw new AppError(
-  ERRORS.INTERNAL_SERVER_ERROR,
-  HttpStatus.INTERNAL_SERVER_ERROR,
-  { id },
-  { cause: error }
-)
-```
-
-## 5. Controller pattern (copy this shape)
-
-Controllers are thin: read the already-validated input, call a service, return via `createResponse`. No `try/catch`, no `next` (§4), and no `Promise<void>` return type (§3).
-
-Input validation is **not** the controller's job. The route runs `validateRequest` (§7) first. It parses `params`/`query`/`body` with Zod, replaces them with the parsed (coerced/trimmed) values, and throws a `422` `AppError` on failure. The controller types `req` with the schema's inferred types and uses the values directly.
-
-Reference implementations: `src/features/todo/` (full layering) and `src/features/health/` (controller-only, no business logic).
-
-A controller with dependencies is a **factory** that receives the service, so tests can wire it to any service instance (§1 Testing). A controller with no dependencies, like `health`, exports plain functions.
-
-Before calling `createResponse`, assign the payload to a locally-typed `data` constant instead of passing the service's return value straight through. This makes the response shape visible to whoever opens the controller. Since the type is a plain assignment (not an object literal), it won't catch excess properties on its own; if a field must never leave the service (a token, a hash), strip it explicitly via destructuring first. Type it with the entity when the payload _is_ the entity (`Todo`, `Todo[]`). When the shape differs, name a type `<Feature><Action>Data` (e.g. `LoginData`) in `<feature>.type.ts`. Then assign `createResponse`'s result to its own `response` constant, so each step (`data` -> `response` -> `res.status(...).json(response)`) is its own line:
-
-```ts
-import { HttpStatus, SUCCESS } from '@/shared/consts'
-import { createResponse } from '@/shared/utils'
-import type { Todo } from './todo.entity'
-import type { CreateTodoInput, TodoIdParams } from './todo.schema'
-import type { TodoService } from './todo.service'
-import type { Request, Response } from 'express'
-
-export const createTodoController = (todoService: TodoService) => {
-  const create = async (req: Request<unknown, unknown, CreateTodoInput>, res: Response) => {
-    const data: Todo = await todoService.create(req.body) // already validated by the route
-    const response = createResponse(SUCCESS.create('todo'), data)
-    res.status(HttpStatus.CREATED).json(response)
-  }
-
-  const getById = async (req: Request<TodoIdParams>, res: Response) => {
-    const data: Todo = await todoService.getById(req.params.id)
-    const response = createResponse(SUCCESS.get('todo'), data)
-    res.status(HttpStatus.OK).json(response)
-  }
-
-  return { create, getById }
-}
-
-export type TodoController = ReturnType<typeof createTodoController>
-```
-
-Routers are also factories. They take the controller, put `validateRequest(...)` in front of any handler that reads input, and return the `Router`:
-
-```ts
-import { Router } from 'express'
-import { validateRequest } from '@/core/http'
-import { todoSchema } from './todo.schema'
-import type { TodoController } from './todo.controller'
-
-export const createTodoRouter = (todoController: TodoController): Router => {
-  const router = Router()
-
-  router.post('/', validateRequest(todoSchema.create), todoController.create)
-  router.get('/:id', validateRequest(todoSchema.byId), todoController.getById)
-
-  return router
-}
-```
-
-Type handlers with `Request<Params, unknown, Body, Query>` generics from the schema's inferred types; Express accepts them at registration as-is.
-
-## 6. Recipe — add a new feature (reference: `src/features/todo/`)
-
-Follow these steps in order, inside out: business layer first, then adapters, then wiring. The fastest start is to copy `src/features/todo/` and rename. Skip files you genuinely don't need (§3), but keep the naming. Snippets below are abridged; the real files are the source of truth.
-
-1. **Create the folder** `src/features/<feature>/`.
-
-2. **Entity** — `todo.entity.ts`. Plain TS types the business layer works with. No ORM types, no Zod:
-
-```ts
-export interface Todo {
-  id: string
-  title: string
-  done: boolean
-  createdAt: Date
-}
-
-export type NewTodo = Pick<Todo, 'title'>
-export type TodoChanges = Partial<Pick<Todo, 'title' | 'done'>>
-```
-
-3. **Repository port** — `todo.repository.ts`. Only the operations the service needs, in domain types. Never throws for a missing record: reads/updates return `null`, deletes return `false`:
-
-```ts
-import type { NewTodo, Todo, TodoChanges } from './todo.entity'
-
-export interface TodoRepository {
-  findById(id: string): Promise<Todo | null>
-  findByTitle(title: string): Promise<Todo | null>
-  create(data: NewTodo): Promise<Todo>
-  update(id: string, changes: TodoChanges): Promise<Todo | null>
-  remove(id: string): Promise<boolean>
-  // ...
-}
-```
-
-4. **Service** — `todo.service.ts`. Business rules only. Take dependencies through a deps object, throw domain errors (§4), never import Express, a DB client, or `HttpStatus` (lint-enforced, §2):
-
-```ts
-import { ConflictError, NotFoundError } from '@/core/error'
-import { ERRORS } from '@/shared/consts'
-import type { NewTodo, Todo } from './todo.entity'
-import type { TodoRepository } from './todo.repository'
-
-export interface TodoServiceDeps {
-  todoRepo: TodoRepository
-}
-
-export const createTodoService = ({ todoRepo }: TodoServiceDeps) => {
-  const getById = async (id: string): Promise<Todo> => {
-    const todo = await todoRepo.findById(id)
-    if (!todo) {
-      throw new NotFoundError('Todo', { id })
-    }
-    return todo
-  }
-
-  const create = async (data: NewTodo): Promise<Todo> => {
-    if (await todoRepo.findByTitle(data.title)) {
-      throw new ConflictError(ERRORS.alreadyExists('Todo title'), {
-        title: data.title,
-      })
-    }
-    return todoRepo.create(data)
-  }
-
-  const remove = async (id: string) => {
-    if (!(await todoRepo.remove(id))) {
-      throw new NotFoundError('Todo', { id })
-    }
-  }
-
-  return { getById, create, remove }
-}
-
-export type TodoService = ReturnType<typeof createTodoService>
-```
-
-5. **Repository adapter** — `todo.repository.<driver>.ts`. Implements the port. This is the only file that touches storage, and the starter doesn't assume a driver. Every adapter, whatever the DB, does the same two things (driver failures need no wrapping — they propagate to `errorHandler`, §4):
-   - map rows/documents to entities (drop columns the domain doesn't need, convert `_id` -> `id`, …);
-   - translate the driver's "not found" signal into the port's `null`/`false`. Don't throw `NotFoundError` here; that's the service's call.
-
-   How common drivers signal "not found" (check your driver's docs for the version you use):
-
-   | Driver                   | Read miss              | Update miss                                         | Delete miss                         |
-   | ------------------------ | ---------------------- | --------------------------------------------------- | ----------------------------------- |
-   | Raw SQL (`mysql2`, `pg`) | no rows                | `affectedRows` / `rowCount` is `0`                  | same                                |
-   | Sequelize                | `findByPk` -> `null`   | `update` -> `[0]`                                   | `destroy` -> `0`                    |
-   | TypeORM                  | `findOneBy` -> `null`  | `update` -> `affected === 0`                        | `delete` -> `affected === 0`        |
-   | Mongoose                 | `findById` -> `null`   | `findByIdAndUpdate(id, x, { new: true })` -> `null` | `deleteOne` -> `deletedCount === 0` |
-   | Prisma                   | `findUnique` -> `null` | `update` throws `P2025` (catch it -> `null`)        | `deleteMany` -> `count === 0`       |
-
-   Abridged from the real `todo.repository.sqlite.ts` (Node's built-in `node:sqlite`, connection in `core/database`):
-
-```ts
-// Row = shape in the DB (done as 0/1, date as text); never leaves this file
-interface TodoRow {
-  id: string
-  title: string
-  done: number
-  createdAt: string
-}
-
-const mapTodo = (row: TodoRow): Todo => ({
-  id: row.id,
-  title: row.title,
-  done: row.done === 1,
-  createdAt: new Date(row.createdAt),
-})
-
-export const createSqliteTodoRepository = (db: DatabaseSync): TodoRepository => {
-  const findById = async (id: string): Promise<Todo | null> => {
-    const row = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as TodoRow | undefined
-    return row ? mapTodo(row) : null // driver's undefined -> port's null
-  }
-
-  const remove = async (id: string): Promise<boolean> => {
-    const result = db.prepare('DELETE FROM todos WHERE id = ?').run(id)
-    return result.changes > 0 // 0 rows -> false
-  }
-
-  return { findById, remove /* , … */ }
-}
-```
-
-Always bind values with `?` placeholders; never build SQL by string interpolation (SQL injection).
-
-6. **Validation** — `todo.schema.ts` (Zod, the same validator used for env). Keep the individual Zod schemas private. Export one `<feature>Schema` object that groups them per route by request segment (`params`/`query`/`body`, the shape `validateRequest` expects), and export the inferred input types for the controller:
-
-```ts
-import { z } from 'zod'
-import { ERRORS } from '@/shared/consts'
-
-const createBody = z.object({
-  title: z
-    .string({ error: ERRORS.requiredField('Title') })
-    .trim()
-    .min(1, ERRORS.requiredField('Title')),
-})
-
-const idParams = z.object({
-  id: z.uuid({ error: ERRORS.invalidField('todo id') }),
-})
-
-export const todoSchema = {
-  create: { body: createBody },
-  byId: { params: idParams },
-} as const
-
-export type CreateTodoInput = z.infer<typeof createBody>
-export type TodoIdParams = z.infer<typeof idParams>
-```
-
-7. **Controller** and **routes** — `todo.controller.ts`, `todo.routes.ts` (factories, see §5).
-
-8. **Composition root** — `todo/index.ts`. The only place that picks the adapter and wires the layers. It exports the router (and any types other code may need), never internals:
-
-```ts
-import { db } from '@/core/database'
-import { createTodoController } from './todo.controller'
-import { createSqliteTodoRepository } from './todo.repository.sqlite'
-import { createTodoRouter } from './todo.routes'
-import { createTodoService } from './todo.service'
-
-const todoRepo = createSqliteTodoRepository(db) // swap to e.g. createPostgresTodoRepository(pool) later
-const todoService = createTodoService({ todoRepo })
-const todoController = createTodoController(todoService)
-
-export const todoRouter = createTodoRouter(todoController)
-export type { Todo } from './todo.entity'
-```
-
-9. **Add messages** instead of inline strings. Reuse `SUCCESS.*` / `ERRORS.*` (`@/shared/consts`) first; add a generic entry there only if other features could reuse it. Text that only makes sense for this feature goes in `<feature>.const.ts` (§3):
-
-```ts
-// auth.const.ts
-export const AUTH_MESSAGE = {
-  LOGIN: 'Logged in successfully',
-  INVALID_CREDENTIALS: 'Invalid email or password',
-}
-```
-
-10. **Register the router** in `src/routes.ts`:
-
-```ts
-import { todoRouter } from '@/features/todo'
-// ...
-router.use('/todos', todoRouter)
-```
-
-11. **Document the endpoint** (OpenAPI) — write this once manual testing (§8) confirms the endpoint's behavior, not while first implementing it; land it together with the tests in the same follow-up change. The spec lives in `src/features/docs/spec/` — the `docs` feature reads it from disk at runtime (`SwaggerParser.bundle`) to serve `/docs/openapi.json` and the Scalar UI, so it ships inside the feature folder, not a top-level `docs/` directory. Add a path file under `src/features/docs/spec/paths/<feature>/`, reference it from `src/features/docs/spec/openapi.yaml`, and reuse shared schemas/responses where possible. Because `tsc` only compiles `.ts` files, `npm run build` copies this `spec/` tree into `dist/` via the `copy-assets` script (`package.json`) — if the spec ever moves, keep that copy step pointed at the new path.
-
-12. **Verify** (§8).
-
-## 7. Middleware
-
-Third-party middleware (`cors`, `helmet`, `express-rate-limit`) is configured as plain options in `core/config/options.ts` and applied in `app.ts`. Custom middleware lives in `src/core/http/` (the Express-facing part of `core`; `core/logger` stays framework-agnostic):
-
-| File                  | Export                   | Purpose                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `validate-request.ts` | `validateRequest(shape)` | Parses `params` -> `query` -> `body` with the Zod schema given for each (all optional). On success it replaces that segment with the parsed data. On the first failure it throws a `422` `AppError` that joins all issue messages, with `metadata.source` set to the failing segment. Only request input becomes a 422 — a `ZodError` anywhere else is a server bug and stays a 500. |
-| `error-handler.ts`    | `errorHandler`           | Global error middleware, registered last in `app.ts`: normalize, log, respond (§4).                                                                                                                                                                                                                                                                                                  |
-| `request-logger.ts`   | `requestLogger`          | `morgan` access log routed through the Winston `logger` at `http` level (via morgan's `stream` option), so it follows the same format, transports, and test silencing as every other log line. Visible when `LOG_LEVEL` is `http` or more verbose.                                                                                                                                   |
-
-Adding more:
-
-- Cross-feature middleware (auth guard, role check, …) goes in `src/core/http/`, one file per concern (`<name>.ts`, no `.middleware.ts` suffix, see §3), exported from its `index.ts`. Put its types in `<name>.type.ts` beside it.
-- Feature-specific middleware can live in the feature folder instead.
-- Wire global middleware in `app.ts`; per-route middleware in the feature's `*.routes.ts`.
-
-## 8. Definition of done
-
-A feature moves through these stages, in order:
-
-1. **Implement** the feature per the shapes in §5–6.
-2. **Manual test** the endpoint (e.g. via Postman) — happy path + main error paths.
-3. Once manual testing confirms the behavior is correct, **write tests** (§1) and the
-   **OpenAPI doc** (§6 step 11) together, in the same follow-up change.
-4. Run:
-
-```bash
-npm run fix    # ESLint --fix + Prettier
-npm run check  # lint + typecheck + test + build (must pass)
-```
-
-CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck`, and `test` on every PR to `main` and every push to `main`, so a change that skips these locally will fail there.
-
-It's fine to land stage 1 as its own commit before stages 2–3 are finished — just don't
-call the feature "done" (or open it for review/PR) until docs + tests land. A feature is
-only complete once all four stages pass and the router is mounted in `src/routes.ts`.
-
-## 9. Quick do / don't
-
-- DO keep controllers thin; push logic into services.
-- DO keep services framework/DB-agnostic: depend on the repository port, receive deps via `createXService({ ... })`, pick adapters only in the feature's `index.ts`.
-- DO throw domain errors (`NotFoundError`, `ConflictError`, …) from the business layer; use `HttpStatus`/`AppError` directly only in adapters and `core/`.
-- DO use `createResponse` and the message constants.
-- DO validate input with `validateRequest(<feature>Schema.<action>)` in the route, not `schema.parse()` in the controller.
-- DO throw and let `errorHandler` log/respond — no `try/catch` in controllers or middleware; register connection cleanup with `onShutdown`.
-- DO write log messages inline at the log call; keep `SUCCESS`/`ERRORS` for client-facing text (see §4).
-- DO add new env vars to the Zod schema in `core/config/env.ts` (with a `.default()` unless it's a secret) and to `.env.example`; use `z.coerce.number()` for numeric ones.
-- DON'T import across features, hardcode response strings, throw raw `Error`, use `any`, read `process.env` directly, or use `console.log`.
-- DON'T import Express, a DB client, or `HttpStatus` into `*.service.ts` / `*.entity.ts` / `*.repository.ts`, and don't `eslint-disable` the boundary rule to get around it (§2).
-- DON'T leak ORM/driver types through a repository port; map rows to entities in the adapter.
-- DON'T throw `NotFoundError` from a repository adapter; return `null`/`false` and let the service decide (§2).
-- DON'T put secrets (passwords, tokens) into `AppError` metadata or logs.
-- DON'T add a database, auth, or i18n message keys speculatively — this is a starter; add them when a real feature needs them (see §1). `todo` is a reference feature. A consuming project may delete it once it has its own layered feature to copy from, and should point the `todo` references in this file at that feature in the same change.
-
-## 10. Commit messages
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) with a bullet-list body.
-
-**Title** (≤72 chars, imperative, English):
-
-```
-<type>(<scope>): <summary>
-```
-
-| Type       | Use for                         |
-| ---------- | ------------------------------- |
-| `feat`     | New user-facing behavior        |
-| `fix`      | Bug fix                         |
-| `refactor` | Code change, no behavior change |
-| `test`     | Tests only                      |
-| `chore`    | Tooling, deps, config           |
-| `docs`     | Documentation only              |
-
-**Scope:** feature or area — `health`, `todo`, `config`, `logger`, `error`, `server`, `shared`, `docs`, …
-
-**Body:** bullet list (`-`), one meaningful change per line. Focus on _why_ and impact, not every file touched. Omit body for trivial one-line fixes.
-
-```
-fix(logger): prevent metadata from clobbering reserved log fields
-
-- Filter `rest` metadata against RESERVED_LOG_KEYS before spreading it into the
-  winston log call, mirroring the guard already used on read
-- Tighten `LogMetadata` type so `message`/`level`/`timestamp` are rejected at
-  compile time
-```
-
-**Do:** match existing repo style; group related changes in one commit; write title as a command ("add", "fix", "remove").
-
-**Don't:** paste full diffs; list every renamed method; use past tense ("added", "fixed"); commit secrets (`.env`, credentials).
-
-## 11. Git workflow
-
-- Work **one logical change per commit** — small, reviewable slices; do not batch unrelated changes.
-- **Do NOT run `git commit` or `git push`** unless the user explicitly asks.
-- When the user wants to commit themselves, provide a suggested commit message (§10 format) instead of committing.
+- **Done** = implemented → manually tested → tests + OpenAPI doc → `npm run fix` and `npm run check` (lint + typecheck + test + build) pass → router mounted. CI runs lint, typecheck, and tests on every PR/push to `main`.
+- **Commits:** Conventional Commits, imperative English title ≤ 72 chars (`<type>(<scope>): <summary>`; types `feat` `fix` `refactor` `test` `chore` `docs`), bullet body explaining _why_. One logical change per commit. Never commit `.env` or secrets.
+- **Git:** don't `git commit` or `git push` unless asked; otherwise suggest a message.
