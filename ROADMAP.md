@@ -70,6 +70,16 @@ Refactor รอบนี้มีเป้าหมายเพื่อ **เ�
 - [ ] สลับ adapter ใน `todo/index.ts` บรรทัดเดียว; `.memory.ts` เก็บไว้ใช้กับ service test
 - [ ] ตรวจสถานะ stability ของ `node:sqlite` ใน Node 26 ก่อนเริ่ม
 
+## Phase 9 — Tests
+
+เขียนหลัง refactor ทุก phase นิ่งแล้ว เพื่อไม่ต้องแก้ test ซ้ำหลายรอบ
+
+- [ ] เขียนใหม่ + เอา `describe.skip` ออก: `app-error.test.ts`, `error-handler.test.ts`, `validate-request.test.ts`
+- [ ] env: export `envSchema`, test defaults (`safeParse({})`) + `z.stringbool()` (`'false'` → `false`)
+- [ ] logger (ถ้าจำเป็น): dev format แสดง meta / stack ถูกต้อง
+- [ ] test ของ phase ที่เพิ่มทีหลัง (schema/validate ใหม่, SQLite adapter ถ้าทำ)
+- [ ] `npm run check` ผ่าน โดยไม่มี test ที่ถูก skip ค้าง
+
 ---
 
 ## Decisions
