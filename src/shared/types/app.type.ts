@@ -9,3 +9,9 @@ export type AppResponse<T> = {
   timestamp: string
   data?: T
 }
+
+export type ErrorDebugData = {
+  name: string
+  metadata?: Record<string, unknown>
+  stack?: string[]
+}

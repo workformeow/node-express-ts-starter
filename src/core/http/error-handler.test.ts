@@ -1,82 +1,123 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { env } from '@/core/config'
 import { AppError } from '@/core/error'
+import { logger } from '@/core/logger'
 import { ERRORS, HttpStatus } from '@/shared/consts'
 import { AppEnv } from '@/shared/types'
+import type { AppResponse, ErrorDebugData } from '@/shared/types'
 import { errorHandler } from './error-handler'
-import type { Response } from 'express'
+import type { Request, Response } from 'express'
 
 const originalNodeEnv = env.NODE_ENV
 
+const req = { method: 'GET', originalUrl: '/todos/1' } as Request
 const makeRes = () => {
-  const status = vi.fn()
+  const status = vi.fn().mockReturnThis()
   const json = vi.fn()
   const res = { status, json } as unknown as Response
-  status.mockReturnValue(res)
-  json.mockReturnValue(res)
   return { res, status, json }
 }
+const next = vi.fn<(err?: unknown) => void>()
 
-describe.skip('errorHandler', () => {
-  afterEach(() => {
-    env.NODE_ENV = originalNodeEnv
-    vi.restoreAllMocks()
-  })
+afterEach(() => {
+  env.NODE_ENV = originalNodeEnv
+  vi.restoreAllMocks()
+})
 
-  it('responds with the AppError status and message', async () => {
+describe('errorHandler', () => {
+  it('responds with an AppError status and message', () => {
     const { res, status, json } = makeRes()
     const error = new AppError('bad input', HttpStatus.BAD_REQUEST)
 
-    errorHandler(error, {} as never, res, vi.fn())
+    errorHandler(error, req, res, next)
 
+    const [payload] = json.mock.calls[0] as [AppResponse<unknown>]
     expect(status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST)
-    expect(json).toHaveBeenCalledWith(expect.objectContaining({ message: 'bad input' }))
+    expect(payload.message).toBe('bad input')
   })
 
-  it('falls back to 500 and a generic message for a plain Error without a message', async () => {
+  it('adds { name, metadata, stack } as data in development', () => {
+    env.NODE_ENV = AppEnv.DEVELOPMENT
+    const { res, json } = makeRes()
+    const error = new AppError('bad input', HttpStatus.BAD_REQUEST, { id: '1' })
+
+    errorHandler(error, req, res, next)
+
+    const [payload] = json.mock.calls[0] as [AppResponse<ErrorDebugData>]
+    expect(payload.data).toEqual({
+      name: 'AppError',
+      metadata: { id: '1' },
+      stack: error.stack?.split('\n'),
+    })
+  })
+
+  it('turns malformed JSON into a 400', () => {
     const { res, status, json } = makeRes()
-    const error = new Error()
+    const error = Object.assign(new SyntaxError('Unexpected token } in JSON'), {
+      type: 'entity.parse.failed',
+    })
 
-    errorHandler(error, {} as never, res, vi.fn())
+    errorHandler(error, req, res, next)
 
-    expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR)
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: ERRORS.INTERNAL_SERVER_ERROR })
+    const [payload] = json.mock.calls[0] as [AppResponse<unknown>]
+    expect(status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST)
+    expect(payload.message).toBe(ERRORS.INVALID_JSON_BODY)
+  })
+
+  it('logs a 4xx as warn with metadata and request info', () => {
+    const log = vi.spyOn(logger, 'log')
+    const { res } = makeRes()
+    const error = new AppError('bad input', HttpStatus.BAD_REQUEST, { id: '1' })
+
+    errorHandler(error, req, res, next)
+
+    expect(log).toHaveBeenCalledWith('warn', 'bad input', {
+      id: '1',
+      status: HttpStatus.BAD_REQUEST,
+      method: req.method,
+      url: req.originalUrl,
+      stack: error.stack,
+    })
+  })
+
+  it('logs a 5xx as error with the original message', () => {
+    const log = vi.spyOn(logger, 'log')
+    const { res } = makeRes()
+    const error = new Error('connect ECONNREFUSED db.internal:5432 password=secret')
+
+    errorHandler(error, req, res, next)
+
+    expect(log).toHaveBeenCalledWith(
+      'error',
+      'connect ECONNREFUSED db.internal:5432 password=secret',
+      {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        method: req.method,
+        url: req.originalUrl,
+        stack: error.stack,
+      }
     )
   })
 
-  it('never sends a non-AppError message to the client in production', async () => {
-    env.NODE_ENV = AppEnv.PRODUCTION
+  it('hides any other error behind a generic 500', () => {
     const { res, status, json } = makeRes()
     const error = new Error('connect ECONNREFUSED db.internal:5432 password=secret')
 
-    errorHandler(error, {} as never, res, vi.fn())
+    errorHandler(error, req, res, next)
 
+    const [payload] = json.mock.calls[0] as [AppResponse<unknown>]
     expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR)
-    const [payload] = json.mock.calls[0] as [{ message: string; data?: unknown }]
     expect(payload.message).toBe(ERRORS.INTERNAL_SERVER_ERROR)
-    expect(payload.data).toBeUndefined()
   })
 
-  it('attaches structured debug data in development', async () => {
-    env.NODE_ENV = AppEnv.DEVELOPMENT
-    const { res, json } = makeRes()
-    const error = new AppError('bad input', HttpStatus.BAD_REQUEST)
-
-    errorHandler(error, {} as never, res, vi.fn())
-
-    const [payload] = json.mock.calls[0] as [{ data?: { status?: HttpStatus } }]
-    expect(payload.data?.status).toBe(HttpStatus.BAD_REQUEST)
-  })
-
-  it('omits debug data in production', async () => {
+  it('sends no data outside development', () => {
     env.NODE_ENV = AppEnv.PRODUCTION
     const { res, json } = makeRes()
-    const error = new AppError('bad input', HttpStatus.BAD_REQUEST)
+    const error = new AppError('bad input', HttpStatus.BAD_REQUEST, { id: '1' })
 
-    errorHandler(error, {} as never, res, vi.fn())
+    errorHandler(error, req, res, next)
 
-    const [payload] = json.mock.calls[0] as [{ data?: unknown }]
+    const [payload] = json.mock.calls[0] as [AppResponse<unknown>]
     expect(payload.data).toBeUndefined()
   })
 })

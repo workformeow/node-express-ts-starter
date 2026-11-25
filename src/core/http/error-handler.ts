@@ -2,6 +2,7 @@ import { env } from '@/core/config'
 import { AppError } from '@/core/error'
 import { logger } from '@/core/logger'
 import { ERRORS, HttpStatus } from '@/shared/consts'
+import type { ErrorDebugData } from '@/shared/types'
 import { AppEnv } from '@/shared/types'
 import { createResponse } from '@/shared/utils'
 import type { NextFunction, Request, Response } from 'express'
@@ -28,7 +29,7 @@ export const errorHandler = (error: Error, req: Request, res: Response, _next: N
     stack: error.stack,
   })
 
-  const data =
+  const data: ErrorDebugData | undefined =
     env.NODE_ENV === AppEnv.DEVELOPMENT
       ? { name: error.name, metadata: appError.metadata, stack: error.stack?.split('\n') }
       : undefined
