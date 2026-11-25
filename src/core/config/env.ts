@@ -10,7 +10,7 @@ const splitComma = (value: string): string[] =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-const envSchema = z.object({
+export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
   NODE_ENV: z.enum(AppEnv).default(AppEnv.DEVELOPMENT),
   BASE_URL: z.string().default('http://localhost:3000'),
