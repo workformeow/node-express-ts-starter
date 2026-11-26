@@ -48,6 +48,7 @@ Imports flow one way: `features → core → shared`. Features never import each
 | `todo.controller.ts`        | Express handlers                                           | DB                                       |
 | `todo.routes.ts`            | router: `validateRequest(...)` then the handler            | DB                                       |
 | `index.ts`                  | composition root: picks the adapter, wires, exports router | —                                        |
+| `todo.e2e.test.ts`          | one journey through the real `createApp()`                 | —                                        |
 
 The "Must NOT import" column is lint-enforced: one `restrictImports(files, ...bans)` line per layer in `eslint.config.mjs`. Don't `eslint-disable` it; move the code. `NO_DB` lists only what the starter uses — add your driver/ORM there when a project adopts one.
 
@@ -112,14 +113,15 @@ Copy `src/features/todo/` and rename, working inside out:
 
 1. `entity` → 2. `repository` (port) → 3. `service` → 4. `repository.<driver>` (adapter) → 5. `schema` → 6. `controller` + `routes` → 7. `index.ts` (wire, export the router) → 8. mount in `src/routes.ts`.
 
-Then: messages in `SUCCESS`/`ERRORS` or `<feature>.const.ts`; connections register cleanup with `onShutdown` where they're created. After manual testing (Postman or `/docs`), add the OpenAPI path under `src/features/docs/spec/paths/<feature>/` and reference it from `openapi.yaml` (`npm run build` copies `spec/` into `dist/`).
+Then: messages in `SUCCESS`/`ERRORS` or `<feature>.const.ts`; connections register cleanup with `onShutdown` where they're created. After manual testing (Postman or `/docs`), add `<feature>.e2e.test.ts` (§6) and the OpenAPI path under `src/features/docs/spec/paths/<feature>/` and reference it from `openapi.yaml` (`npm run build` copies `spec/` into `dist/`).
 
 ## 6. Testing (Vitest)
 
 - **Write tests only when the developer asks.** A feature "looking done" is not a request.
 - `<name>.test.ts` next to the file. One `describe` per export, one `it` per behavior, named by outcome.
 - **Services:** no mocks — inject a fresh memory repo per test (`createTodoService({ todoRepo: createMemoryTodoRepository(seed) })`). See `todo.service.test.ts`.
-- **HTTP:** build an isolated app per test (`express()` + `express.json()` + router on a fresh repo + `errorHandler`), not the shared `createApp()`. See `buildApp` in `todo.controller.test.ts`.
+- **HTTP:** build an isolated app per test (`express()` + `express.json()` + router on a fresh repo + `errorHandler`). See `buildApp` in `todo.controller.test.ts`.
+- **E2E:** `<feature>.e2e.test.ts` runs one main journey (create → … → delete) through the real `createApp()`, so it catches what isolated tests can't: a router not mounted, wrong adapter wiring, middleware order. `app.test.ts` covers app-level wiring only (`/health`, malformed JSON → 400). Keep e2e to the happy path; edge cases belong in controller tests.
 - Assert against constants (`SUCCESS.OK`), not copied strings. Cast `res.body` once to `AppResponse<T>`. Avoid `expect.any(...)` (trips `no-unsafe-assignment`).
 - Mocks: keep `vi.fn()` in typed local variables; type `next` as `vi.fn<(err?: unknown) => void>()`, not `NextFunction`. For values computed from `env` at import time, use `vi.resetModules()` + `vi.doMock('@/core/config', …)` + dynamic `import()`.
 - `NODE_ENV=test` keeps the logger silent; mock `@/core/logger` to assert on logs.
