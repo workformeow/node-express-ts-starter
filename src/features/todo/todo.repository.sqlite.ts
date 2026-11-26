@@ -3,7 +3,7 @@ import type { NewTodo, Todo, TodoChanges } from './todo.entity'
 import type { TodoRepository } from './todo.repository'
 import type { DatabaseSync } from 'node:sqlite'
 
-interface TodoRow {
+type TodoRow = {
   id: string
   title: string
   done: number
@@ -45,21 +45,19 @@ export const createSqliteTodoRepository = (db: DatabaseSync): TodoRepository => 
   }
 
   const create = async ({ title }: NewTodo): Promise<Todo> => {
-    const todo: Todo = { id: randomUUID(), title, done: false, createdAt: new Date() }
-    const query = 'INSERT INTO todos (id, title, done, createdAt) VALUES (?, ?, ?, ?)'
-    db.prepare(query).run(todo.id, todo.title, 0, todo.createdAt.toISOString())
-
-    return todo
+    const query = 'INSERT INTO todos (id, title, createdAt) VALUES (?, ?, ?) RETURNING *'
+    const row = db.prepare(query).get(randomUUID(), title, new Date().toISOString()) as TodoRow
+    return mapTodo(row)
   }
 
   const update = async (id: string, body: TodoChanges): Promise<Todo | null> => {
     const title = body.title ?? null
     const done = body.done === undefined ? null : Number(body.done)
     const query =
-      'UPDATE todos SET title = COALESCE(?, title), done = COALESCE(?, done) WHERE id = ?'
+      'UPDATE todos SET title = COALESCE(?, title), done = COALESCE(?, done) WHERE id = ? RETURNING *'
 
-    const result = db.prepare(query).run(title, done, id)
-    return result.changes > 0 ? findById(id) : null
+    const row = db.prepare(query).get(title, done, id) as TodoRow | undefined
+    return row ? mapTodo(row) : null
   }
 
   const remove = async (id: string) => {
