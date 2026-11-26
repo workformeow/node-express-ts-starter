@@ -10,20 +10,20 @@ const MISSING_ID = 'missing-id'
 describe('createSqliteTodoRepository', () => {
   it('creates an undone todo with a UUID', async () => {
     const newTodo: NewTodo = {
-      title: 'Buy Milk',
+      title: 'Buy milk',
     }
     const repo = makeRepo()
     const todo = await repo.create(newTodo)
 
     expect(z.uuid().safeParse(todo.id).success).toBe(true)
-    expect(todo.title).toBe('Buy Milk')
+    expect(todo.title).toBe('Buy milk')
     expect(todo.done).toBe(false)
     expect(todo.createdAt).toBeInstanceOf(Date)
   })
 
   it('reads a stored todo back by id', async () => {
     const newTodo: NewTodo = {
-      title: 'Buy Milk',
+      title: 'Buy milk',
     }
     const repo = makeRepo()
 
