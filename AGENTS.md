@@ -2,12 +2,6 @@
 
 Rules for AI assistants (and humans) working in this repo. The code is the source of truth: this file states the rules and the _why_ the code can't show, and points at real files for examples. If the two disagree, fix this file in the same change.
 
-> **⚠️ Active refactor — teaching mode (highest priority).** A refactor is in progress, tracked in
-> `ROADMAP.md`. Its goal is for the developer to **learn**, not to get changes made fast. **Do not
-> edit code unless explicitly told to** ("แก้เลย", "write it", …). By default: explain the why,
-> propose an approach with short examples, let the developer write it, then review. Work one
-> phase / one item at a time. Remove this note when the roadmap is finished.
-
 ## 1. Project
 
 REST API starter: **Node.js 26 (ESM) + Express 5 + TypeScript 6**, Zod (env + request validation), Winston (logging). Feature folders, each layered Clean Architecture style. `src/features/todo/` is the reference feature — copy its shape.
@@ -70,7 +64,7 @@ The "Must NOT import" column is lint-enforced: one `restrictImports(files, ...ba
 - `async` only when the body `await`s. Single-line guard clauses may skip braces (`if (!x) return`).
 - `null` = "deliberately absent" in our own returns (`Todo | null`). `undefined` = optional params/props and values from runtime APIs. Don't swap them in logs or responses: `JSON.stringify` drops `undefined` but prints `null`.
 
-**Env** (`core/config/env.ts`) — one Zod schema is the source of truth (`Env = z.infer`). Every non-secret var has a `.default()`, so no `.env` is needed. Numbers: `z.coerce.number()` with bounds; booleans: `z.stringbool()`. New var → schema + `.env.example`. Never read `process.env` outside `core/config`.
+**Env** (`core/config/env.ts`) — one Zod schema is the source of truth (`Env = z.infer`). Every non-secret var has a `.default()`, so no `.env` is needed. Numbers: `z.coerce.number()` with bounds; booleans: `z.stringbool()`. New var → schema + `.env.example`. Never read `process.env` outside `core/config`. Loaded with Node's `process.loadEnvFile()` (no dotenv); a missing `.env` only logs, since platforms inject env themselves, while an invalid one exits with code 1.
 
 **Logging** — use `logger` from `@/core/logger` (plain Winston): `logger.info(message, meta)`, or `logger.log(level, …)` for a runtime level. `meta` is a flat object (`{ id }`), no secrets. Write log text inline at the call. `console.*` only in `env.ts` (runs before the logger). Behavior comes from env: `LOG_LEVEL`, `LOG_FILE` (daily JSON files), `NODE_ENV=test` (silent).
 
@@ -93,7 +87,7 @@ All errors live in `core/error/app-error.ts`: `new AppError(message, status = 50
 | `UnauthorizedError(message, metadata?)` | bad credentials / token         | 401    |
 | `BusinessRuleError(message, metadata?)` | well-formed input breaks a rule | 422    |
 
-Need another? Add a subclass in `app-error.ts`. Outside the business layer, `throw new AppError(msg, HttpStatus.X, metadata)` directly.
+Need another? Add a subclass in `app-error.ts` (no `http-errors`: domain errors keep HTTP status out of services). Outside the business layer, `throw new AppError(msg, HttpStatus.X, metadata)` directly.
 
 **Just throw.** Express 5 forwards sync throws and rejected promises, so no `try/catch`/`next(err)` in controllers or middleware. Use `try/catch` only to _do_ something with an error (e.g. rethrow with `{ cause }`).
 
@@ -118,13 +112,14 @@ Then: messages in `SUCCESS`/`ERRORS` or `<feature>.const.ts`; connections regist
 ## 6. Testing (Vitest)
 
 - **Write tests only when the developer asks.** A feature "looking done" is not a request.
-- `<name>.test.ts` next to the file. One `describe` per export, one `it` per behavior, named by outcome.
+- `<name>.test.ts` next to the file. One `describe` per export (e2e: per feature API, e.g. `'todos API'`), one `it` per behavior, named by outcome.
 - **Services:** no mocks — inject a fresh memory repo per test (`createTodoService({ todoRepo: createMemoryTodoRepository(seed) })`). See `todo.service.test.ts`.
+- **Adapters:** test against the real driver, a fresh one per test (`new DatabaseSync(':memory:')`), covering row mapping and the port's `null`/`false` signals. See `todo.repository.sqlite.test.ts`.
 - **HTTP:** build an isolated app per test (`express()` + `express.json()` + router on a fresh repo + `errorHandler`). See `buildApp` in `todo.controller.test.ts`.
 - **E2E:** `<feature>.e2e.test.ts` runs one main journey (create → … → delete) through the real `createApp()`, so it catches what isolated tests can't: a router not mounted, wrong adapter wiring, middleware order. `app.test.ts` covers app-level wiring only (`/health`, malformed JSON → 400). Keep e2e to the happy path; edge cases belong in controller tests.
 - Assert against constants (`SUCCESS.OK`), not copied strings. Cast `res.body` once to `AppResponse<T>`. Avoid `expect.any(...)` (trips `no-unsafe-assignment`).
 - Mocks: keep `vi.fn()` in typed local variables; type `next` as `vi.fn<(err?: unknown) => void>()`, not `NextFunction`. For values computed from `env` at import time, use `vi.resetModules()` + `vi.doMock('@/core/config', …)` + dynamic `import()`.
-- `NODE_ENV=test` keeps the logger silent; mock `@/core/logger` to assert on logs.
+- `NODE_ENV=test` keeps the logger silent. To assert on logs, create `vi.spyOn(logger, 'log')` inside the `it` and call `vi.restoreAllMocks()` in `afterEach` (a spy made outside the `it` stops recording after the first restore). See `error-handler.test.ts`.
 
 ## 7. Done, commits, git
 
