@@ -3,7 +3,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { corsOptions, helmetOptions, rateLimitOptions } from '@/core/config'
-import { errorHandler, requestLogger } from '@/core/http'
+import { errorHandler, notFoundHandler, requestLogger } from '@/core/http'
 import { mainRoutes } from '@/routes'
 import type { Express } from 'express'
 
@@ -17,6 +17,7 @@ export const createApp = (): Express => {
   app.use(express.json())
 
   app.use(mainRoutes)
+  app.use(notFoundHandler)
   app.use(errorHandler)
 
   return app

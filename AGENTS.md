@@ -17,7 +17,7 @@ src/
     config/    #   env.ts (load .env + Zod), options.ts (cors/helmet/rate-limit)
     database/  #   node:sqlite connection, closed on shutdown
     error/     #   AppError + domain errors (no Express — services import these)
-    http/      #   Express middleware: validateRequest, requestLogger, errorHandler
+    http/      #   Express middleware: validateRequest, requestLogger, notFoundHandler, errorHandler
     logger/    #   Winston (no Express)
     server/    #   startServer + graceful shutdown (onShutdown)
   features/    # one folder per feature
@@ -97,7 +97,7 @@ Need another? Add a subclass in `app-error.ts` (no `http-errors`: domain errors 
 2. **Logs** `warn` (< 500) or `error` (≥ 500) with the original message, `metadata`, `status`, `method`, `url`, `stack`.
 3. **Responds**; development adds `{ name, metadata, stack }` as `data`.
 
-It must keep 4 params (`error, req, res, _next`) — Express spots error middleware by arity.
+It must keep 4 params (`error, req, res, _next`) — Express spots error middleware by arity. Just before it, `notFoundHandler` throws a 404 for any unmatched path or method, so unknown routes get the same JSON shape instead of Express's default HTML.
 
 **Validation** — routes run `validateRequest(<feature>Schema.<action>)` first; it parses and replaces `params`/`query`/`body`, or throws a 422 with `metadata.source`. Only request input becomes 422; a `ZodError` elsewhere is a server bug (500). Controllers type `req` with the schema's `z.infer` types.
 

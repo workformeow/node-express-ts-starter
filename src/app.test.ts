@@ -25,4 +25,20 @@ describe('createApp', () => {
     expect(res.status).toBe(HttpStatus.BAD_REQUEST)
     expect(body.message).toBe(ERRORS.INVALID_JSON_BODY)
   })
+
+  it('returns a JSON 404 for an unknown path', async () => {
+    const notFound = await request(app).get('/unknown')
+    const body = notFound.body as AppResponse<undefined>
+
+    expect(notFound.status).toBe(HttpStatus.NOT_FOUND)
+    expect(body.message).toBe(ERRORS.notFound('Route'))
+  })
+
+  it('returns a JSON 404 for a method the route does not have', async () => {
+    const notFound = await request(app).put('/todos/1')
+    const body = notFound.body as AppResponse<undefined>
+
+    expect(notFound.status).toBe(HttpStatus.NOT_FOUND)
+    expect(body.message).toBe(ERRORS.notFound('Route'))
+  })
 })
