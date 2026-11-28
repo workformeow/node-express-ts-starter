@@ -11,8 +11,8 @@ const splitComma = (value: string): string[] =>
     .filter(Boolean)
 
 export const envSchema = z.object({
+  NODE_ENV: z.enum(AppEnv),
   PORT: z.coerce.number().int().positive().max(65535).default(3000),
-  NODE_ENV: z.enum(AppEnv).default(AppEnv.DEVELOPMENT),
   BASE_URL: z.string().default('http://localhost:3000'),
   CORS_ORIGINS: z.string().default('').transform(splitComma),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),

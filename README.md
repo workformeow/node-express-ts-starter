@@ -12,18 +12,18 @@ Requires Node.js >= 26 (see `.nvmrc`).
 
 ```bash
 npm install
-cp .env.example .env   # optional — every variable has a default
+cp .env.example .env   # required: sets NODE_ENV (other variables have defaults)
 npm run dev            # http://localhost:3000  ·  docs at /docs
 ```
 
 ## Environment Variables
 
-Loaded from `.env` if present (`process.loadEnvFile()`), never overriding variables already set, then validated with Zod (`src/core/config/env.ts`). An invalid value stops the app with a readable error.
+Loaded from `.env` if present (`process.loadEnvFile()`), never overriding variables already set, then validated with Zod (`src/core/config/env.ts`). A missing or invalid value stops the app with a readable error.
 
 | Variable              | Default                 | Notes                                                     |
 | --------------------- | ----------------------- | --------------------------------------------------------- |
+| `NODE_ENV`            | — (required)            | `development`, `production`, or `test` (silences logs)    |
 | `PORT`                | `3000`                  |                                                           |
-| `NODE_ENV`            | `development`           | `development`, `production`, or `test` (silences logs)    |
 | `BASE_URL`            | `http://localhost:3000` | Shown in the startup log                                  |
 | `CORS_ORIGINS`        | (empty)                 | Production only (development allows all). Comma-separated |
 | `LOG_LEVEL`           | `info`                  | `error` `warn` `info` `http` `verbose` `debug`            |

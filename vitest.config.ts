@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
+import { requiredTestEnv } from './src/core/config/env.fixture'
 
 export default defineConfig({
   resolve: {
@@ -10,7 +11,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     env: {
-      NODE_ENV: 'test',
+      ...requiredTestEnv,
     },
   },
 })
